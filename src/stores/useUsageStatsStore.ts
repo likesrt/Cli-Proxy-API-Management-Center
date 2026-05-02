@@ -17,7 +17,7 @@ import i18n from '@/i18n';
 
 export const USAGE_STATS_STALE_TIME_MS = 240_000;
 
-const USAGE_INCREMENTAL_OVERLAP_MS = 20_000;
+const USAGE_REFRESH_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const USAGE_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '7h': 7 * 60 * 60 * 1000,
   '24h': 24 * 60 * 60 * 1000,
@@ -27,6 +27,7 @@ const USAGE_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
 
 export type LoadUsageStatsOptions = {
   force?: boolean;
+  fullRange?: boolean;
   staleTimeMs?: number;
   timeRange?: UsageTimeRange;
 };
@@ -140,7 +141,7 @@ const resolveRequestRanges = (
       return [{ startMs: null, endMs: nowMs }];
     }
     if (force || !fresh) {
-      ranges.push({ startMs: Math.max(0, latestEnd - USAGE_INCREMENTAL_OVERLAP_MS), endMs: nowMs });
+      ranges.push({ startMs: Math.max(0, latestEnd - USAGE_REFRESH_LOOKBACK_MS), endMs: nowMs });
     }
     return ranges;
   }
@@ -154,7 +155,7 @@ const resolveRequestRanges = (
 
   if (force || !fresh) {
     ranges.push({
-      startMs: Math.max(targetStartMs, latestEnd - USAGE_INCREMENTAL_OVERLAP_MS),
+      startMs: Math.max(targetStartMs, latestEnd - USAGE_REFRESH_LOOKBACK_MS),
       endMs: nowMs,
     });
   }
@@ -222,6 +223,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
   loadUsageStats: async (options = {}) => {
     const force = options.force === true;
+    const fullRange = options.fullRange === true;
     const staleTimeMs = options.staleTimeMs ?? USAGE_STATS_STALE_TIME_MS;
     const nowMs = Date.now();
     const targetStartMs = getRangeStartMs(options.timeRange, nowMs);
@@ -234,7 +236,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       state.lastRefreshedAt !== null &&
       nowMs - state.lastRefreshedAt < staleTimeMs;
 
-    if (!force && fresh && hasStartCoverage(state.loadedRanges, targetStartMs)) {
+    if (!force && !fullRange && fresh && hasStartCoverage(state.loadedRanges, targetStartMs)) {
       return;
     }
 
@@ -255,14 +257,16 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     }
 
     const requestState = scopeChanged ? get() : state;
-    const requestRanges = resolveRequestRanges(requestState, targetStartMs, nowMs, force, fresh);
+    const requestRanges = fullRange
+      ? [{ startMs: targetStartMs, endMs: nowMs }]
+      : resolveRequestRanges(requestState, targetStartMs, nowMs, force, fresh);
 
     if (!requestRanges.length) {
       set({ lastRefreshedAt: nowMs, scopeKey });
       return;
     }
 
-    const requestKey = `${scopeKey}::${requestRanges
+    const requestKey = `${scopeKey}::${fullRange ? 'full' : 'incremental'}::${requestRanges
       .map((range) => `${range.startMs ?? 'all'}-${range.endMs}`)
       .join(',')}`;
 
@@ -283,7 +287,9 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         if (requestId !== usageRequestToken) return;
 
         const currentState = get();
-        const nextDetailsByKey = { ...currentState.usageDetailsByKey };
+        const nextDetailsByKey: Record<string, UsageDetailWithEndpoint> = fullRange
+          ? {}
+          : { ...currentState.usageDetailsByKey };
         const deletedUsageIds = currentState.deletedUsageIds;
 
         responses.forEach((response) => {
@@ -299,7 +305,9 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         set({
           ...derived,
           usageDetailsByKey: nextDetailsByKey,
-          loadedRanges: mergeLoadedRanges([...currentState.loadedRanges, ...requestRanges]),
+          loadedRanges: fullRange
+            ? mergeLoadedRanges(requestRanges)
+            : mergeLoadedRanges([...currentState.loadedRanges, ...requestRanges]),
           loading: false,
           error: null,
           lastRefreshedAt: Date.now(),

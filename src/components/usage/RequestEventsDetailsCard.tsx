@@ -734,7 +734,6 @@ export function RequestEventsDetailsCard({
               <span className={styles.requestEventsLimitHint}>
                 {t('usage_stats.request_events_limit_hint', {
                   shown: MAX_RENDERED_EVENTS,
-                  total: filteredRows.length,
                 })}
               </span>
             )}

@@ -40,7 +40,12 @@ export function useUsageData(options: UseUsageDataOptions = {}): UseUsageDataRet
   }, [loadUsageStats, timeRange]);
 
   useEffect(() => {
-    void loadUsageStats({ staleTimeMs: USAGE_STATS_STALE_TIME_MS, timeRange }).catch(() => {});
+    void loadUsageStats({
+      force: true,
+      fullRange: true,
+      staleTimeMs: USAGE_STATS_STALE_TIME_MS,
+      timeRange,
+    }).catch(() => {});
   }, [loadUsageStats, timeRange]);
 
   const handleSetModelPrices = useCallback((prices: Record<string, ModelPrice>) => {

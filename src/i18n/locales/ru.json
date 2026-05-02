@@ -1058,7 +1058,7 @@
     "request_events_no_result_title": "Совпадений не найдено",
     "request_events_no_result_desc": "Попробуйте другие фильтры или очистите текущие.",
     "request_events_count": "{{count}} событий",
-    "request_events_limit_hint": "Показано {{shown}} из {{total}} событий для стабильной производительности.",
+    "request_events_limit_hint": "Для стабильной производительности показано только {{shown}} событий.",
     "request_events_failure_log_title": "Журнал ошибки",
     "request_events_failure_log_view": "Показать журнал ошибки",
     "request_events_failure_log_message_label": "Приблизительное сообщение об ошибке",
