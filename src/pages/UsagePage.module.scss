@@ -1058,6 +1058,29 @@
   border-radius: $radius-md;
 }
 
+.requestEventsFixedCard {
+  display: flex;
+  flex-direction: column;
+  height: 700px;
+  overflow: hidden;
+
+  @include mobile {
+    height: 580px;
+  }
+
+  :global(.card-header),
+  .requestEventsToolbar,
+  .requestEventsMeta {
+    flex: 0 0 auto;
+  }
+
+  .requestEventsTableWrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 .requestEventsTable {
   min-width: 1640px;
   table-layout: fixed;
@@ -1076,7 +1099,7 @@
 }
 
 .requestEventsSourceCol {
-  width: 180px;
+  width: 228px;
 }
 
 .requestEventsResultCol {
@@ -1084,7 +1107,7 @@
 }
 
 .requestEventsTimingCol {
-  width: 108px;
+  width: 92px;
 }
 
 .requestEventsThinkingCol {

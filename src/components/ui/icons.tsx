@@ -414,6 +414,19 @@ export function IconSidebarAuthFiles({ size = 20, ...props }: IconProps) {
   );
 }
 
+export function IconSidebarCredentialCenter({ size = 20, ...props }: IconProps) {
+  return (
+    <svg {...sidebarSvgProps} width={size} height={size} {...props}>
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+      <circle cx="16" cy="14" r="2" fill="currentColor" fillOpacity="0.12" />
+      <path d="M16 12v4" />
+      <path d="M14 14h4" />
+    </svg>
+  );
+}
+
 export function IconSidebarOauth({ size = 20, ...props }: IconProps) {
   return (
     <svg {...sidebarSvgProps} width={size} height={size} {...props}>

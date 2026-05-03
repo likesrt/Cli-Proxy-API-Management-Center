@@ -30,6 +30,7 @@ export type LoadUsageStatsOptions = {
   fullRange?: boolean;
   staleTimeMs?: number;
   timeRange?: UsageTimeRange;
+  minimumLookbackMs?: number;
 };
 
 type UsageLoadedRange = {
@@ -72,6 +73,26 @@ const getRangeStartMs = (timeRange: UsageTimeRange | undefined, nowMs: number): 
     return null;
   }
   return nowMs - USAGE_RANGE_MS[timeRange];
+};
+
+const getTargetStartMs = (
+  timeRange: UsageTimeRange | undefined,
+  nowMs: number,
+  minimumLookbackMs: number | undefined
+): number | null => {
+  if (timeRange === 'all') {
+    return null;
+  }
+
+  const rangeStartMs = getRangeStartMs(timeRange, nowMs);
+  const minimumStartMs =
+    typeof minimumLookbackMs === 'number' && Number.isFinite(minimumLookbackMs) && minimumLookbackMs > 0
+      ? nowMs - minimumLookbackMs
+      : null;
+
+  if (rangeStartMs === null) return minimumStartMs;
+  if (minimumStartMs === null) return rangeStartMs;
+  return Math.min(rangeStartMs, minimumStartMs);
 };
 
 const getLatestLoadedEndMs = (ranges: UsageLoadedRange[]): number | null => {
@@ -226,7 +247,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const fullRange = options.fullRange === true;
     const staleTimeMs = options.staleTimeMs ?? USAGE_STATS_STALE_TIME_MS;
     const nowMs = Date.now();
-    const targetStartMs = getRangeStartMs(options.timeRange, nowMs);
+    const targetStartMs = getTargetStartMs(options.timeRange, nowMs, options.minimumLookbackMs);
     const { apiBase = '', managementKey = '' } = useAuthStore.getState();
     const scopeKey = `${apiBase}::${managementKey}`;
     const state = get();

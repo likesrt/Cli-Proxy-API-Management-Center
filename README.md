@@ -42,6 +42,21 @@
   - 支持CPA模型名称映射，例如把CPA中的coder-model先映射为qwen3.6-plus后再进行价格匹配
 ![usage-price-sync](docs/images/usage-price-sync.png)
 
+### 新增凭证中心页面
+
+- 凭证刷新倒计时
+  - 读取自动刷新调度队列，按「1分钟内 / 10分钟内 / 1小时内 / 1天内 / 7天内 / 更长时间」统计待刷新凭证数量。
+  - 展示最早刷新倒计时，帮助判断是否适合退出进程。
+  - 点击任一时间段可展开该段凭证明细，查看 provider、账号和预计刷新时间。
+![credential-center-refresh-countdown](docs/images/credential-center-refresh-countdown.png)
+
+- Codex 凭证池统计
+  - 支持「刷新全部」「刷新未获取」两个批量刷新入口，可设置刷新间隔秒数，并显示批量刷新进度。
+  - 展示 7天预估总额度、7天预估剩余额度，以及 Codex 凭证数和未获取额度数量。
+  - 按 Codex 类别展示凭证数、已获取额度数、7天预估总额度、7天预估剩余额度、单凭证7天平均额度。
+  - 按固定百分比分档展示各凭证的 7 天配额剩余情况，适合大量凭证快速观察分布。
+![credential-center-codex-pool-stats](docs/images/credential-center-codex-pool-stats.png)
+
 ## 使用方法
 
 在CPA的配置面板中，设置面板仓库为本仓库地址后，强制刷新（Ctrl+F5）页面

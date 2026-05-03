@@ -34,13 +34,18 @@ import type { ModelStat } from '@/components/usage/ModelStatsCard';
 import { MonitorStatCards } from '@/components/monitor/MonitorStatCards';
 import { MonitorTrendChart } from '@/components/monitor/MonitorTrendChart';
 import { ModelUsageDistributionCard } from '@/components/monitor/ModelUsageDistributionCard';
-import { MonitorCredentialStatsCard } from '@/components/monitor/MonitorCredentialStatsCard';
 import {
   filterUsageByTimeRange,
   getModelNamesFromUsage,
   getModelStats,
   type UsageTimeRange
 } from '@/utils/usage';
+import {
+  DEFAULT_USAGE_TIME_RANGE,
+  HOUR_WINDOW_BY_USAGE_TIME_RANGE,
+  USAGE_TIME_RANGE_OPTIONS,
+  isUsageTimeRange
+} from '@/utils/usageTimeRange';
 import styles from './MonitoringCenterPage.module.scss';
 
 ChartJS.register(
@@ -59,33 +64,16 @@ ChartJS.register(
 );
 
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-monitor-time-range-v1';
-const DEFAULT_TIME_RANGE: UsageTimeRange = '24h';
-const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: string }> = [
-  { value: '7h', labelKey: 'usage_stats.range_7h' },
-  { value: '24h', labelKey: 'usage_stats.range_24h' },
-  { value: '7d', labelKey: 'usage_stats.range_7d' },
-  { value: '30d', labelKey: 'usage_stats.range_30d' },
-  { value: 'all', labelKey: 'usage_stats.range_all' }
-];
-const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '7h': 7,
-  '24h': 24,
-  '7d': 7 * 24,
-  '30d': 30 * 24
-};
-
-const isUsageTimeRange = (value: unknown): value is UsageTimeRange =>
-  value === '7h' || value === '24h' || value === '7d' || value === '30d' || value === 'all';
 
 const loadTimeRange = (): UsageTimeRange => {
   try {
     if (typeof localStorage === 'undefined') {
-      return DEFAULT_TIME_RANGE;
+      return DEFAULT_USAGE_TIME_RANGE;
     }
     const raw = localStorage.getItem(TIME_RANGE_STORAGE_KEY);
-    return isUsageTimeRange(raw) ? raw : DEFAULT_TIME_RANGE;
+    return isUsageTimeRange(raw) ? raw : DEFAULT_USAGE_TIME_RANGE;
   } catch {
-    return DEFAULT_TIME_RANGE;
+    return DEFAULT_USAGE_TIME_RANGE;
   }
 };
 
@@ -144,7 +132,7 @@ export function MonitoringCenterPage() {
     [usage, timeRange]
   );
   const hourWindowHours =
-    timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
+    timeRange === 'all' ? undefined : HOUR_WINDOW_BY_USAGE_TIME_RANGE[timeRange];
   const rateWindowMinutes = useMemo(() => {
     if (timeRange === '7h') return 7 * 60;
     if (timeRange === '24h') return 24 * 60;
@@ -185,7 +173,7 @@ export function MonitoringCenterPage() {
         <h1 className={styles.pageTitle}>{t('monitoring_center.title')}</h1>
         <div className={styles.headerActions}>
           <div className={styles.timeRangeButtons}>
-            {TIME_RANGE_OPTIONS.map((option) => (
+            {USAGE_TIME_RANGE_OPTIONS.map((option) => (
               <Button
                 key={option.value}
                 variant={timeRange === option.value ? 'primary' : 'secondary'}
@@ -255,15 +243,6 @@ export function MonitoringCenterPage() {
       </div>
 
       <div className={styles.fullWidthSection}>
-        <MonitorCredentialStatsCard
-          usage={filteredUsage as UsagePayload | null}
-          loading={loading}
-          modelPrices={modelPrices}
-          authFiles={authFiles}
-        />
-      </div>
-
-      <div className={styles.fullWidthSection}>
         <RequestEventsDetailsCard
           usage={filteredUsage}
           loading={loading}
@@ -273,6 +252,7 @@ export function MonitoringCenterPage() {
           vertexConfigs={config?.vertexApiKeys || []}
           openaiProviders={config?.openaiCompatibility || []}
           authFiles={authFiles}
+          fixedHeight
           onRefresh={handleRefresh}
           lastRefreshedAt={lastRefreshedAt}
         />

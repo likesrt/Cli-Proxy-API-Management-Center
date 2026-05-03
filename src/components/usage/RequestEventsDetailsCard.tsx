@@ -70,6 +70,7 @@ export interface RequestEventsDetailsCardProps {
   authFiles?: AuthFileItem[];
   onRefresh?: () => Promise<void> | void;
   lastRefreshedAt?: Date | null;
+  fixedHeight?: boolean;
 }
 
 const AUTO_REFRESH_OFF = 'off';
@@ -157,6 +158,7 @@ export function RequestEventsDetailsCard({
   authFiles,
   onRefresh,
   lastRefreshedAt,
+  fixedHeight = false,
 }: RequestEventsDetailsCardProps) {
   const { t, i18n } = useTranslation();
   const { showConfirmation, showNotification } = useNotificationStore();
@@ -609,6 +611,7 @@ export function RequestEventsDetailsCard({
   return (
     <Card
       title={t('usage_stats.request_events_title')}
+      className={fixedHeight ? styles.requestEventsFixedCard : undefined}
       extra={
         <div className={styles.requestEventsActions}>
           <Button

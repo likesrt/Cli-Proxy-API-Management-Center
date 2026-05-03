@@ -13,6 +13,8 @@ export interface UsagePayload {
 
 export interface UseUsageDataOptions {
   timeRange?: UsageTimeRange;
+  minimumLookbackMs?: number;
+  refreshFullRange?: boolean;
 }
 
 export interface UseUsageDataReturn {
@@ -26,7 +28,7 @@ export interface UseUsageDataReturn {
 }
 
 export function useUsageData(options: UseUsageDataOptions = {}): UseUsageDataReturn {
-  const { timeRange } = options;
+  const { timeRange, minimumLookbackMs, refreshFullRange = false } = options;
   const usageSnapshot = useUsageStatsStore((state) => state.usage);
   const loading = useUsageStatsStore((state) => state.loading);
   const storeError = useUsageStatsStore((state) => state.error);
@@ -36,8 +38,14 @@ export function useUsageData(options: UseUsageDataOptions = {}): UseUsageDataRet
   const [modelPrices, setModelPrices] = useState<Record<string, ModelPrice>>(() => loadModelPrices());
 
   const loadUsage = useCallback(async () => {
-    await loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS, timeRange });
-  }, [loadUsageStats, timeRange]);
+    await loadUsageStats({
+      force: true,
+      fullRange: refreshFullRange,
+      staleTimeMs: USAGE_STATS_STALE_TIME_MS,
+      timeRange,
+      minimumLookbackMs,
+    });
+  }, [loadUsageStats, minimumLookbackMs, refreshFullRange, timeRange]);
 
   useEffect(() => {
     void loadUsageStats({
@@ -45,8 +53,9 @@ export function useUsageData(options: UseUsageDataOptions = {}): UseUsageDataRet
       fullRange: true,
       staleTimeMs: USAGE_STATS_STALE_TIME_MS,
       timeRange,
+      minimumLookbackMs,
     }).catch(() => {});
-  }, [loadUsageStats, timeRange]);
+  }, [loadUsageStats, minimumLookbackMs, timeRange]);
 
   const handleSetModelPrices = useCallback((prices: Record<string, ModelPrice>) => {
     setModelPrices(prices);

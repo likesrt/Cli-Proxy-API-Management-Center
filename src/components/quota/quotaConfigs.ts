@@ -1203,6 +1203,7 @@ export const CODEX_CONFIG: QuotaConfig<
     status: 'success',
     windows: data.windows,
     planType: data.planType,
+    refreshedAtMs: Date.now(),
   }),
   buildErrorState: (message, status) => ({
     status: 'error',
