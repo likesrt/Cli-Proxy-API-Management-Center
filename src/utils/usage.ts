@@ -774,12 +774,18 @@ export function formatCompactNumber(value: number): string {
   }
   const abs = Math.abs(num);
   if (abs >= 1_000_000) {
-    return `${(num / 1_000_000).toFixed(1)}M`;
+    return `${(num / 1_000_000).toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })}M`;
   }
   if (abs >= 1_000) {
-    return `${(num / 1_000).toFixed(1)}K`;
+    return `${(num / 1_000).toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })}K`;
   }
-  return abs >= 1 ? num.toFixed(0) : num.toFixed(2);
+  return abs >= 1 ? Math.round(num).toLocaleString() : num.toFixed(2);
 }
 
 /**
