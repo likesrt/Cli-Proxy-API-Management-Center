@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { usageApi } from '@/services/api';
+import { usageApi } from '@/services/api/usage';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
   buildUsageSnapshotFromDetails,

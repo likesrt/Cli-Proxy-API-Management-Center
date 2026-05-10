@@ -142,15 +142,21 @@ export function Modal({
     );
   }, []);
 
-  const startClose = useCallback(() => {
-    if (closeTimerRef.current !== null) return;
-    setIsClosing(true);
-    closeTimerRef.current = window.setTimeout(() => {
-      setIsVisible(false);
-      setIsClosing(false);
-      closeTimerRef.current = null;
-    }, CLOSE_ANIMATION_DURATION);
-  }, []);
+  const startClose = useCallback(
+    (notifyParent: boolean) => {
+      if (closeTimerRef.current !== null) return;
+      setIsClosing(true);
+      closeTimerRef.current = window.setTimeout(() => {
+        setIsVisible(false);
+        setIsClosing(false);
+        closeTimerRef.current = null;
+        if (notifyParent) {
+          onClose();
+        }
+      }, CLOSE_ANIMATION_DURATION);
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +174,7 @@ export function Modal({
     } else if (isVisible) {
       queueMicrotask(() => {
         if (cancelled) return;
-        startClose();
+        startClose(false);
       });
     }
 
@@ -178,10 +184,8 @@ export function Modal({
   }, [open, isVisible, startClose]);
 
   const handleClose = useCallback(() => {
-    if (closeTimerRef.current !== null) return;
-    startClose();
-    onClose();
-  }, [onClose, startClose]);
+    startClose(true);
+  }, [startClose]);
 
   useEffect(() => {
     return () => {

@@ -20,7 +20,6 @@ dist
 dist-ssr
 *.local
 skills
-.claude/
 
 # Editor directories and files
 settings.local.json

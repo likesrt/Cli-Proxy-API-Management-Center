@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { USAGE_STATS_STALE_TIME_MS, useUsageStatsStore } from '@/stores';
+import { USAGE_STATS_STALE_TIME_MS, useUsageStatsStore } from '@/stores/useUsageStatsStore';
 import { loadModelPrices, saveModelPrices, type ModelPrice, type UsageTimeRange } from '@/utils/usage';
 
 export interface UsagePayload {

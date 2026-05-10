@@ -7,9 +7,14 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { CODEX_CONFIG } from '@/components/quota';
 import { useQuotaStore } from '@/stores';
-import type { CodexQuotaState } from '@/types';
+import { useCodexQuotaMetaStore } from '@/stores/useCodexQuotaMetaStore';
+import type { CodexQuotaState, CodexQuotaWindow } from '@/types';
 import type { AuthFileItem as AuthFileMeta } from '@/types/authFile';
 import type { UsagePayload } from '@/components/usage';
+import {
+  fetchCodexQuotaWithMeta,
+  type CodexQuotaWindowMeta,
+} from '@/utils/codexQuotaMeta';
 import { isCodexFile } from '@/utils/quota';
 import {
   calculateCost,
@@ -77,6 +82,15 @@ const toWindowCost = (endMs: number | null, windowMs: number | null) => {
   return { endMs, startMs: endMs - windowMs };
 };
 
+const getWindowEndMs = (
+  window: CodexQuotaWindow | undefined,
+  meta: CodexQuotaWindowMeta | undefined
+): number | null => {
+  if (!window) return null;
+  const endMs = typeof meta?.resetAtUnix === 'number' ? meta.resetAtUnix * 1000 : null;
+  return endMs !== null && Number.isFinite(endMs) && endMs > 0 ? endMs : null;
+};
+
 const getCredentialHealth = (file?: AuthFileMeta): CredentialHealth => {
   if (file?.disabled === true) return 'disabled';
   if (file?.unavailable === true) return 'exhausted';
@@ -97,6 +111,8 @@ export function MonitorCredentialStatsCard({
   const [searchTerm, setSearchTerm] = useState('');
   const codexQuota = useQuotaStore((state) => state.codexQuota);
   const setCodexQuota = useQuotaStore((state) => state.setCodexQuota);
+  const codexQuotaMeta = useCodexQuotaMetaStore((state) => state.codexQuotaMeta);
+  const setCodexQuotaMeta = useCodexQuotaMetaStore((state) => state.setCodexQuotaMeta);
 
   const rows = useMemo((): CredentialRow[] => {
     if (!usage) return [];
@@ -265,11 +281,12 @@ export function MonitorCredentialStatsCard({
       }));
 
       try {
-        const data = await CODEX_CONFIG.fetchQuota(authFile, t);
+        const { data, meta } = await fetchCodexQuotaWithMeta(authFile, t);
         setCodexQuota((prev) => ({
           ...prev,
           [quotaKey]: CODEX_CONFIG.buildSuccessState(data)
         }));
+        setCodexQuotaMeta(quotaKey, meta);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
         const status =
@@ -287,7 +304,7 @@ export function MonitorCredentialStatsCard({
         setRefreshingKeys((prev) => ({ ...prev, [quotaKey]: false }));
       }
     },
-    [authFiles, resolveQuotaKey, setCodexQuota, t]
+    [authFiles, resolveQuotaKey, setCodexQuota, setCodexQuotaMeta, t]
   );
 
   const rowCosts = useMemo(() => {
@@ -323,15 +340,16 @@ export function MonitorCredentialStatsCard({
     rows.forEach((row) => {
       const quotaKey = resolveQuotaKey(row);
       const quotaState = quotaKey ? (codexQuota[quotaKey] as CodexQuotaState | undefined) : undefined;
+      const quotaMeta = quotaKey ? codexQuotaMeta[quotaKey] : undefined;
       const events = rowCosts.get(row.key) ?? [];
       const fiveHourWindow = quotaState?.windows?.find((window) => window.id === 'five-hour');
       const weeklyWindow = quotaState?.windows?.find((window) => window.id === 'weekly');
       const fiveHourInfo = toWindowCost(
-        fiveHourWindow?.resetAtUnix ? fiveHourWindow.resetAtUnix * 1000 : null,
+        getWindowEndMs(fiveHourWindow, quotaMeta?.windows['five-hour']),
         5 * 60 * 60 * 1000
       );
       const weeklyInfo = toWindowCost(
-        weeklyWindow?.resetAtUnix ? weeklyWindow.resetAtUnix * 1000 : null,
+        getWindowEndMs(weeklyWindow, quotaMeta?.windows.weekly),
         7 * 24 * 60 * 60 * 1000
       );
 
@@ -348,7 +366,7 @@ export function MonitorCredentialStatsCard({
     });
 
     return result;
-  }, [codexQuota, resolveQuotaKey, rowCosts, rows]);
+  }, [codexQuota, codexQuotaMeta, resolveQuotaKey, rowCosts, rows]);
 
   const handleSort = useCallback(
     (key: SortKey) => {

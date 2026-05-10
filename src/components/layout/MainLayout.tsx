@@ -14,7 +14,6 @@ import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
 import {
   IconSidebarAuthFiles,
-  IconSidebarCredentialCenter,
   IconSidebarConfig,
   IconSidebarDashboard,
   IconSidebarLogs,
@@ -22,8 +21,11 @@ import {
   IconSidebarProviders,
   IconSidebarQuota,
   IconSidebarSystem,
-  IconSidebarMonitoring,
 } from '@/components/ui/icons';
+import {
+  IconSidebarCredentialCenter,
+  IconSidebarMonitoring,
+} from '@/components/layout/forkSidebarIcons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import {
   useAuthStore,

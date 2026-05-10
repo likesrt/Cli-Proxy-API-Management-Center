@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { IconRefreshCw } from '@/components/ui/icons';
 import type { UsagePayload } from '@/components/usage';
 import { useQuotaStore } from '@/stores';
+import { useCodexQuotaMetaStore } from '@/stores/useCodexQuotaMetaStore';
 import type { AuthFileItem, CodexQuotaState, CodexQuotaWindow } from '@/types';
 import {
   CREDENTIAL_COST_WINDOW_GRACE_MS,
@@ -15,6 +16,10 @@ import {
   getCredentialRowKeyForFile,
   sumCostInWindow
 } from '@/utils/credentialUsage';
+import {
+  fetchCodexQuotaWithMeta,
+  type CodexQuotaWindowMeta,
+} from '@/utils/codexQuotaMeta';
 import { isCodexFile } from '@/utils/quota';
 import { formatUsd, type ModelPrice } from '@/utils/usage';
 import styles from '@/pages/CredentialCenterPage.module.scss';
@@ -53,8 +58,12 @@ const estimateQuotaCost = (cost: number | null | undefined, window: CodexQuotaWi
   return cost / usedRatio;
 };
 
-const getWindowEndMs = (window: CodexQuotaWindow | undefined): number | null => {
-  const endMs = typeof window?.resetAtUnix === 'number' ? window.resetAtUnix * 1000 : null;
+const getWindowEndMs = (
+  window: CodexQuotaWindow | undefined,
+  meta: CodexQuotaWindowMeta | undefined
+): number | null => {
+  if (!window) return null;
+  const endMs = typeof meta?.resetAtUnix === 'number' ? meta.resetAtUnix * 1000 : null;
   return endMs !== null && Number.isFinite(endMs) && endMs > 0 ? endMs : null;
 };
 
@@ -69,6 +78,8 @@ export function CodexCredentialQuotaCard({
   const [searchTerm, setSearchTerm] = useState('');
   const codexQuota = useQuotaStore((state) => state.codexQuota);
   const setCodexQuota = useQuotaStore((state) => state.setCodexQuota);
+  const codexQuotaMeta = useCodexQuotaMetaStore((state) => state.codexQuotaMeta);
+  const setCodexQuotaMeta = useCodexQuotaMetaStore((state) => state.setCodexQuotaMeta);
 
   const codexFiles = useMemo(
     () => authFiles.filter((file) => file.name && isCodexFile(file)),
@@ -93,8 +104,15 @@ export function CodexCredentialQuotaCard({
 
     codexFiles.forEach((file) => {
       const quotaState = codexQuota[file.name] as CodexQuotaState | undefined;
-      const fiveHourEndMs = getWindowEndMs(getQuotaWindow(quotaState, 'five-hour'));
-      const weeklyEndMs = getWindowEndMs(getQuotaWindow(quotaState, 'weekly'));
+      const quotaMeta = codexQuotaMeta[file.name];
+      const fiveHourEndMs = getWindowEndMs(
+        getQuotaWindow(quotaState, 'five-hour'),
+        quotaMeta?.windows['five-hour']
+      );
+      const weeklyEndMs = getWindowEndMs(
+        getQuotaWindow(quotaState, 'weekly'),
+        quotaMeta?.windows.weekly
+      );
       const events = costBuckets.get(getCredentialRowKeyForFile(file)) ?? [];
 
       result.set(file.name, {
@@ -120,7 +138,7 @@ export function CodexCredentialQuotaCard({
     });
 
     return result;
-  }, [codexFiles, codexQuota, costBuckets]);
+  }, [codexFiles, codexQuota, codexQuotaMeta, costBuckets]);
 
   const handleRefreshQuota = useCallback(
     async (file: AuthFileItem) => {
@@ -134,11 +152,12 @@ export function CodexCredentialQuotaCard({
       }));
 
       try {
-        const data = await CODEX_CONFIG.fetchQuota(file, t);
+        const { data, meta } = await fetchCodexQuotaWithMeta(file, t);
         setCodexQuota((prev) => ({
           ...prev,
           [quotaKey]: CODEX_CONFIG.buildSuccessState(data)
         }));
+        setCodexQuotaMeta(quotaKey, meta);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
         const status =
@@ -156,7 +175,7 @@ export function CodexCredentialQuotaCard({
         setRefreshingKeys((prev) => ({ ...prev, [quotaKey]: false }));
       }
     },
-    [setCodexQuota, t]
+    [setCodexQuota, setCodexQuotaMeta, t]
   );
 
   const renderQuotaLimit = (quotaState: CodexQuotaState | undefined, id: 'five-hour' | 'weekly') => {
