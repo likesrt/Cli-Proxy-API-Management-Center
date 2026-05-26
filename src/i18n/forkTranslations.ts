@@ -6,6 +6,10 @@ export const forkTranslations = {
       "monitoring_center": "监控中心",
       "credential_center": "凭证中心"
     },
+    "nav_meta": {
+      "monitoring_center": "请求与用量洞察",
+      "credential_center": "凭证配额与队列"
+    },
     "usage_stats": {
       "title": "使用统计",
       "total_requests": "总请求数",
@@ -260,6 +264,10 @@ export const forkTranslations = {
       "monitoring_center": "監控中心",
       "credential_center": "憑證中心"
     },
+    "nav_meta": {
+      "monitoring_center": "請求與用量洞察",
+      "credential_center": "憑證配額與佇列"
+    },
     "usage_stats": {
       "title": "使用統計",
       "total_requests": "總請求數",
@@ -485,6 +493,10 @@ export const forkTranslations = {
     "nav": {
       "monitoring_center": "Monitoring Center",
       "credential_center": "Credential Center"
+    },
+    "nav_meta": {
+      "monitoring_center": "Request and usage insights",
+      "credential_center": "Credential quotas and queues"
     },
     "usage_stats": {
       "title": "Usage Statistics",
@@ -739,6 +751,10 @@ export const forkTranslations = {
     "nav": {
       "monitoring_center": "Центр мониторинга",
       "credential_center": "Центр ключей"
+    },
+    "nav_meta": {
+      "monitoring_center": "Запросы и использование",
+      "credential_center": "Квоты и очереди ключей"
     },
     "usage_stats": {
       "title": "Статистика использования",
