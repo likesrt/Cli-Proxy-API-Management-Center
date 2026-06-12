@@ -18,6 +18,7 @@ import {
   parseCodexUsagePayload,
   resolveCodexChatgptAccountId,
   resolveCodexPlanType,
+  resolveCodexSubscriptionActiveUntil,
 } from '@/utils/quota';
 import { normalizeAuthIndex } from '@/utils/authIndex';
 
@@ -50,6 +51,8 @@ export interface CodexQuotaMeta {
 export interface CodexQuotaFetchWithMetaResult {
   data: {
     planType: string | null;
+    subscriptionActiveUntil: string | number | null;
+    rateLimitResetCreditsAvailableCount: number | null;
     windows: CodexQuotaWindow[];
   };
   meta: CodexQuotaMeta;
@@ -293,6 +296,7 @@ export const fetchCodexQuotaWithMeta = async (
   }
 
   const planTypeFromFile = resolveCodexPlanType(file);
+  const subscriptionActiveUntil = resolveCodexSubscriptionActiveUntil(file);
   const accountId = resolveCodexChatgptAccountId(file);
   const requestHeader: Record<string, string> = {
     ...CODEX_REQUEST_HEADERS,
@@ -318,10 +322,16 @@ export const fetchCodexQuotaWithMeta = async (
   }
 
   const planTypeFromUsage = normalizePlanType(payload.plan_type ?? payload.planType);
+  const resetCredits = payload.rate_limit_reset_credits ?? payload.rateLimitResetCredits ?? null;
+  const rateLimitResetCreditsAvailableCount = normalizeNumberValue(
+    resetCredits?.available_count ?? resetCredits?.availableCount
+  );
   const { windows, meta } = buildCodexQuotaWindowsWithMeta(payload, t);
   return {
     data: {
       planType: planTypeFromUsage ?? planTypeFromFile,
+      subscriptionActiveUntil,
+      rateLimitResetCreditsAvailableCount,
       windows,
     },
     meta,
