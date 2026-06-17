@@ -87,8 +87,14 @@ const selectQuotaGroup = (
 };
 
 const getRemainingPercentValue = (group: AntigravityQuotaGroup | null): number | null => {
-  if (!group || typeof group.remainingFraction !== 'number') return null;
-  return Math.max(0, Math.min(100, group.remainingFraction * 100));
+  if (!group || !group.buckets || group.buckets.length === 0) return null;
+  // Use the minimum remaining fraction across all buckets
+  const remainingFractions = group.buckets
+    .map((b) => b.remainingFraction)
+    .filter((f): f is number => typeof f === 'number');
+  if (remainingFractions.length === 0) return null;
+  const minFraction = Math.min(...remainingFractions);
+  return Math.max(0, Math.min(100, minFraction * 100));
 };
 
 const getRemainingPercentLabel = (group: AntigravityQuotaGroup | null): string => {
@@ -106,9 +112,15 @@ const estimateQuotaCost = (cost: number | null | undefined, group: AntigravityQu
 };
 
 const getResetTimeMs = (group: AntigravityQuotaGroup | null): number | null => {
-  if (!group || !group.resetTime) return null;
-  const resetMs = Date.parse(group.resetTime);
-  return Number.isFinite(resetMs) && resetMs > 0 ? resetMs : null;
+  if (!group || !group.buckets || group.buckets.length === 0) return null;
+  // Use the earliest reset time across all buckets
+  const resetTimes = group.buckets
+    .map((b) => b.resetTime)
+    .filter((t): t is string => typeof t === 'string' && t.length > 0)
+    .map((t) => Date.parse(t))
+    .filter((ms) => Number.isFinite(ms) && ms > 0);
+  if (resetTimes.length === 0) return null;
+  return Math.min(...resetTimes);
 };
 
 const formatResetLabel = (resetTime: string | undefined): string => {
@@ -419,9 +431,9 @@ export function AntigravityCredentialQuotaCard({
     if (!group) return <span className={styles.quotaStatus}>--</span>;
 
     return (
-      <span className={styles.quotaLimitCellInner} title={formatResetLabel(group.resetTime)}>
+      <span className={styles.quotaLimitCellInner} title={formatResetLabel(group.buckets[0]?.resetTime)}>
         <span className={styles.quotaLimitPrimary}>{getRemainingPercentLabel(group)}</span>
-        <span className={styles.quotaLimitSecondary}>{formatResetLabel(group.resetTime)}</span>
+        <span className={styles.quotaLimitSecondary}>{formatResetLabel(group.buckets[0]?.resetTime)}</span>
       </span>
     );
   };
