@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CODEX_CONFIG } from '@/components/quota';
 import { Button } from '@/components/ui/Button';
@@ -153,6 +153,23 @@ export function CodexCredentialQuotaCard({
   const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(DEFAULT_REFRESH_INTERVAL_SECONDS);
   const [progress, setProgress] = useState<BatchProgress>(emptyProgress);
   const [batchMessage, setBatchMessage] = useState<string | null>(null);
+  const [hiddenRevealed, setHiddenRevealed] = useState(false);
+  const [batchNamesText, setBatchNamesText] = useState('');
+  const titleClickRef = useRef<{ count: number; last: number }>({ count: 0, last: 0 });
+
+  const handleTitleClick = useCallback(() => {
+    const now = Date.now();
+    const ref = titleClickRef.current;
+    if (now - ref.last > 2000) {
+      ref.count = 0;
+    }
+    ref.count += 1;
+    ref.last = now;
+    if (ref.count >= 5) {
+      ref.count = 0;
+      setHiddenRevealed((prev) => !prev);
+    }
+  }, []);
   const codexQuota = useQuotaStore((state) => state.codexQuota);
   const setCodexQuota = useQuotaStore((state) => state.setCodexQuota);
   const codexQuotaMeta = useCodexQuotaMetaStore((state) => state.codexQuotaMeta);
@@ -298,6 +315,69 @@ export function CodexCredentialQuotaCard({
     [codexFiles, hasFetchedQuota, handleRefreshQuota, progress.running, refreshIntervalSeconds, t]
   );
 
+  const handleBatchRefreshByNames = useCallback(async () => {
+    if (progress.running) return;
+
+    const names = Array.from(
+      new Set(
+        batchNamesText
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (names.length === 0) {
+      setBatchMessage('请输入凭证名称');
+      return;
+    }
+
+    const fileByName = new Map(codexFiles.map((file) => [file.name, file]));
+    const targetFiles: AuthFileItem[] = [];
+    const notFound: string[] = [];
+    names.forEach((name) => {
+      const file = fileByName.get(name);
+      if (file) {
+        targetFiles.push(file);
+      } else {
+        notFound.push(name);
+      }
+    });
+
+    const intervalMs = getRefreshIntervalMs(refreshIntervalSeconds);
+    const total = targetFiles.length;
+
+    setBatchMessage(null);
+    setProgress({ running: total > 0, total, done: 0, success: 0, failed: 0, mode: null });
+
+    if (total === 0) {
+      setProgress(emptyProgress());
+      setBatchMessage(`未匹配到任何凭证（${notFound.length} 个无效名称）`);
+      return;
+    }
+
+    for (let index = 0; index < targetFiles.length; index += 1) {
+      const file = targetFiles[index];
+      const result = await handleRefreshQuota(file);
+      setProgress((current) => ({
+        ...current,
+        done: current.done + 1,
+        success: current.success + (result === 'success' ? 1 : 0),
+        failed: current.failed + (result === 'failed' ? 1 : 0)
+      }));
+      if (index < targetFiles.length - 1 && intervalMs > 0) {
+        await sleep(intervalMs);
+      }
+    }
+
+    setProgress((current) => ({ ...current, running: false }));
+    setBatchMessage(
+      notFound.length > 0
+        ? `刷新完成，${notFound.length} 个名称未匹配：${notFound.join('、')}`
+        : '刷新完成'
+    );
+  }, [batchNamesText, codexFiles, handleRefreshQuota, progress.running, refreshIntervalSeconds]);
+
   const missingQuotaCount = useMemo(
     () => codexFiles.filter((file) => !hasFetchedQuota(file)).length,
     [codexFiles, hasFetchedQuota]
@@ -330,7 +410,14 @@ export function CodexCredentialQuotaCard({
 
   return (
     <Card
-      title={t('credential_center.codex_quota_title')}
+      title={
+        <span
+          onClick={handleTitleClick}
+          style={{ cursor: 'default', userSelect: 'none' }}
+        >
+          {t('credential_center.codex_quota_title')}
+        </span>
+      }
       className={styles.fixedCard}
       extra={
         <div className={styles.cardHeaderControls}>
@@ -381,6 +468,31 @@ export function CodexCredentialQuotaCard({
         </div>
       }
     >
+      {hiddenRevealed && (
+        <div className={styles.codexHiddenBatchBox}>
+          <textarea
+            className={styles.codexHiddenBatchTextarea}
+            value={batchNamesText}
+            onChange={(event) => setBatchNamesText(event.currentTarget.value)}
+            placeholder={'每行一个凭证名称'}
+            rows={6}
+            spellCheck={false}
+          />
+          <div className={styles.codexHiddenBatchActions}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleBatchRefreshByNames()}
+              disabled={progress.running}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                <IconRefreshCw size={14} />
+                刷新
+              </span>
+            </Button>
+          </div>
+        </div>
+      )}
       {loading && codexFiles.length === 0 ? (
         <div className={styles.hint}>{t('common.loading')}</div>
       ) : codexFiles.length === 0 ? (
