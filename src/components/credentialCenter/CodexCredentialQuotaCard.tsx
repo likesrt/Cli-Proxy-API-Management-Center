@@ -203,11 +203,17 @@ export function CodexCredentialQuotaCard({
       const quotaState = codexQuota[file.name] as CodexQuotaState | undefined;
       const selected = selectMaxQuotaWindow(quotaState, codexQuotaMeta[file.name]?.windows);
       const endMs = getWindowEndMs(selected?.window, selected?.meta);
-      const windowMs = selected?.meta?.windowKind
+      let windowMs = selected?.meta?.windowKind
         ? WINDOW_MS_BY_KIND[selected.meta.windowKind]
         : selected?.window.id
           ? WINDOW_MS_BY_ID[selected.window.id]
           : null;
+
+      // Fallback to actual windowSeconds from meta when windowKind is 'other' or windowMs is null
+      if (windowMs === null && selected?.meta?.windowSeconds) {
+        windowMs = selected.meta.windowSeconds * 1000;
+      }
+
       const summary =
         selected === null || endMs === null || windowMs === null
           ? null
