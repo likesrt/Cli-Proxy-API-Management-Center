@@ -3,15 +3,18 @@ import type {
   AuthFileItem,
   CodexQuotaWindow,
   CodexRateLimitInfo,
+  CodexRateLimitResetCredit,
   CodexUsagePayload,
   CodexUsageWindow,
 } from '@/types';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api/apiCall';
 import {
+  CODEX_RATE_LIMIT_RESET_CREDITS_URL,
   CODEX_REQUEST_HEADERS,
   CODEX_USAGE_URL,
   createStatusError,
   formatCodexResetLabel,
+  normalizeCodexResetCreditsPayload,
   normalizeNumberValue,
   normalizePlanType,
   normalizeStringValue,
@@ -21,6 +24,8 @@ import {
   resolveCodexSubscriptionActiveUntil,
 } from '@/utils/quota';
 import { normalizeAuthIndex } from '@/utils/authIndex';
+
+const CODEX_RESET_CREDITS_REQUEST_TIMEOUT_MS = 8000;
 
 const FIVE_HOUR_SECONDS = 18000;
 const WEEK_SECONDS = 604800;
@@ -53,6 +58,8 @@ export interface CodexQuotaFetchWithMetaResult {
     planType: string | null;
     subscriptionActiveUntil: string | number | null;
     rateLimitResetCreditsAvailableCount: number | null;
+    rateLimitResetCredits: CodexRateLimitResetCredit[];
+    rateLimitResetCreditsError: string;
     windows: CodexQuotaWindow[];
   };
   meta: CodexQuotaMeta;
@@ -267,6 +274,56 @@ export const buildCodexQuotaWindowsWithMeta = (
   };
 };
 
+type CodexResetCreditsData = {
+  availableCount: number | null;
+  credits: CodexRateLimitResetCredit[];
+  error: string;
+};
+
+const fetchCodexResetCredits = async (
+  authIndex: string,
+  requestHeader: Record<string, string>,
+  t: TFunction
+): Promise<CodexResetCreditsData> => {
+  try {
+    const result = await apiCallApi.request(
+      {
+        authIndex,
+        method: 'GET',
+        url: CODEX_RATE_LIMIT_RESET_CREDITS_URL,
+        header: {
+          ...requestHeader,
+          Accept: 'application/json',
+          'OpenAI-Beta': 'codex-1',
+          Originator: 'Codex Desktop',
+        },
+      },
+      { timeout: CODEX_RESET_CREDITS_REQUEST_TIMEOUT_MS }
+    );
+
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      return { availableCount: null, credits: [], error: getApiCallErrorMessage(result) };
+    }
+
+    const summary = normalizeCodexResetCreditsPayload(result.body ?? result.bodyText);
+    if (summary.invalidPayload) {
+      return {
+        availableCount: null,
+        credits: [],
+        error: t('codex_quota.reset_credits_invalid_payload'),
+      };
+    }
+
+    return { availableCount: summary.availableCount, credits: summary.credits, error: '' };
+  } catch (err: unknown) {
+    return {
+      availableCount: null,
+      credits: [],
+      error: err instanceof Error ? err.message : t('common.unknown_error'),
+    };
+  }
+};
+
 export const fetchCodexQuotaWithMeta = async (
   file: AuthFileItem,
   t: TFunction
@@ -306,15 +363,24 @@ export const fetchCodexQuotaWithMeta = async (
   const planTypeFromUsage = normalizePlanType(payload.plan_type ?? payload.planType);
   const planType = planTypeFromUsage ?? planTypeFromFile;
   const resetCredits = payload.rate_limit_reset_credits ?? payload.rateLimitResetCredits ?? null;
-  const rateLimitResetCreditsAvailableCount = normalizeNumberValue(
+  const usageResetCreditsAvailableCount = normalizeNumberValue(
     resetCredits?.available_count ?? resetCredits?.availableCount
   );
+  const resetCreditsData = await fetchCodexResetCredits(authIndex, requestHeader, t);
+  const resetCreditsCountFromDetails =
+    resetCreditsData.credits.length > 0 ? resetCreditsData.credits.length : null;
+  const rateLimitResetCreditsAvailableCount =
+    resetCreditsData.availableCount ??
+    resetCreditsCountFromDetails ??
+    usageResetCreditsAvailableCount;
   const { windows, meta } = buildCodexQuotaWindowsWithMeta(payload, t, planType);
   return {
     data: {
       planType,
       subscriptionActiveUntil,
       rateLimitResetCreditsAvailableCount,
+      rateLimitResetCredits: resetCreditsData.credits,
+      rateLimitResetCreditsError: resetCreditsData.error,
       windows,
     },
     meta,
