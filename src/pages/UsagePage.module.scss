@@ -1106,6 +1106,10 @@
   width: 86px;
 }
 
+.requestEventsTierCol {
+  width: 96px;
+}
+
 .requestEventsTimingCol {
   width: 92px;
 }
@@ -1301,6 +1305,24 @@
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
+}
+
+.requestEventsTierBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: $radius-full;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+.requestEventsTierEmpty {
+  color: var(--text-tertiary);
 }
 
 .chartLineHeader {

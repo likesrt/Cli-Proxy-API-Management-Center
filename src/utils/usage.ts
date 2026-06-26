@@ -78,7 +78,10 @@ export interface UsageDetail {
   };
   thinking?: UsageThinking | null;
   thinking_effort?: string;
+  service_tier?: string;
   failed: boolean;
+  fail_status_code?: number;
+  fail_body?: string;
   __modelName?: string;
   __timestampMs?: number;
 }
@@ -256,6 +259,47 @@ const normalizeUsageTokens = (value: unknown): UsageDetail['tokens'] => {
   };
 };
 
+const normalizeServiceTier = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const normalizeFailStatusCode = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const normalizeFailBody = (value: unknown): string | undefined => {
+  if (typeof value === 'string') return value.length ? value : undefined;
+  if (value === null || value === undefined) return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+/**
+ * 提取请求明细中的服务层级与失败信息(service_tier / fail_status_code / fail_body)。
+ */
+const extractUsageStatusFields = (
+  detail: Record<string, unknown>
+): Pick<UsageDetail, 'service_tier' | 'fail_status_code' | 'fail_body'> => {
+  const serviceTier = normalizeServiceTier(detail.service_tier ?? detail.serviceTier);
+  const failStatusCode = normalizeFailStatusCode(detail.fail_status_code ?? detail.failStatusCode);
+  const failBody = normalizeFailBody(detail.fail_body ?? detail.failBody);
+  return {
+    ...(serviceTier ? { service_tier: serviceTier } : {}),
+    ...(failStatusCode !== undefined ? { fail_status_code: failStatusCode } : {}),
+    ...(failBody !== undefined ? { fail_body: failBody } : {}),
+  };
+};
+
 const normalizeUsageRecordDetail = (
   detailRaw: unknown,
   modelName: string,
@@ -296,6 +340,7 @@ const normalizeUsageRecordDetail = (
     tokens: normalizeUsageTokens(detail.tokens),
     thinking: normalizeUsageThinking(detail.thinking),
     ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+    ...extractUsageStatusFields(detail),
     failed: detail.failed === true,
     __modelName: modelName,
     __endpoint: endpoint,
@@ -889,6 +934,7 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
           tokens: normalizeUsageTokens(detailRaw.tokens),
           thinking: normalizeUsageThinking(detailRaw.thinking),
           ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+          ...extractUsageStatusFields(detailRaw),
           failed: detailRaw.failed === true,
           __modelName: modelName,
           __timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
@@ -976,6 +1022,7 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
           tokens: normalizeUsageTokens(detailRaw.tokens),
           thinking: normalizeUsageThinking(detailRaw.thinking),
           ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+          ...extractUsageStatusFields(detailRaw),
           failed: detailRaw.failed === true,
           __modelName: modelName,
           __endpoint: endpoint,

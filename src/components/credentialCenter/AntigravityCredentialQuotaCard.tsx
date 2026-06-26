@@ -80,10 +80,18 @@ const selectQuotaGroup = (
   quotaType: 'claude' | 'gemini'
 ): AntigravityQuotaGroup | null => {
   const groups = quotaState?.groups ?? [];
+  if (groups.length === 0) return null;
+  // Upstream derives the group id from the display label via toStableId, so the
+  // Claude group is now e.g. "claude-and-gpt-models" rather than a fixed "claude-gpt".
+  // Match by keyword across id + label so the lookup survives label/id changes.
+  const matchesKeyword = (group: AntigravityQuotaGroup, keywords: string[]): boolean => {
+    const haystack = `${group.id} ${group.label}`.toLowerCase();
+    return keywords.some((keyword) => haystack.includes(keyword));
+  };
   if (quotaType === 'claude') {
-    return groups.find((g) => g.id === 'claude-gpt') ?? null;
+    return groups.find((g) => matchesKeyword(g, ['claude', 'gpt'])) ?? null;
   }
-  return groups.find((g) => g.id.startsWith('gemini-')) ?? null;
+  return groups.find((g) => matchesKeyword(g, ['gemini'])) ?? null;
 };
 
 const getRemainingPercentValue = (group: AntigravityQuotaGroup | null): number | null => {

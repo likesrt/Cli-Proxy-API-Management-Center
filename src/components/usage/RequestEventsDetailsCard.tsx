@@ -47,6 +47,9 @@ type RequestEventRow = {
   sourceType: string;
   authIndex: string;
   failed: boolean;
+  serviceTier: string;
+  failStatusCode: number | null;
+  failBody: string;
   firstByteLatencyMs: number | null;
   generationMs: number | null;
   tps: number | null;
@@ -334,6 +337,12 @@ export function RequestEventsDetailsCard({
       const thinkingEffort = normalizeThinkingText(detail.thinking_effort);
       const thinkingLabel = thinkingEffort || formatThinkingLabel(thinking);
       const cacheHitRatio = inputTokens > 0 ? cachedTokens / inputTokens : null;
+      const serviceTier = normalizeThinkingText(detail.service_tier);
+      const failStatusCode =
+        typeof detail.fail_status_code === 'number' && Number.isFinite(detail.fail_status_code)
+          ? detail.fail_status_code
+          : null;
+      const failBody = typeof detail.fail_body === 'string' ? detail.fail_body : '';
 
       return {
         id: backendId ?? `${timestamp}-${model}-${sourceKey}-${authIndex}-${index}`,
@@ -348,6 +357,9 @@ export function RequestEventsDetailsCard({
         sourceType,
         authIndex,
         failed: detail.failed === true,
+        serviceTier,
+        failStatusCode,
+        failBody,
         firstByteLatencyMs,
         generationMs,
         tps,
@@ -493,6 +505,7 @@ export function RequestEventsDetailsCard({
       'model',
       'source',
       'source_raw',
+      'service_tier',
       'result',
       ...(hasTimingData ? ['first_byte_latency_ms', 'generation_ms', 'tps'] : []),
       'thinking_effort',
@@ -510,6 +523,7 @@ export function RequestEventsDetailsCard({
         row.model,
         row.source,
         row.sourceRaw,
+        row.serviceTier,
         row.failed ? 'failed' : 'success',
         ...(hasTimingData
           ? [
@@ -546,7 +560,12 @@ export function RequestEventsDetailsCard({
       model: row.model,
       source: row.source,
       source_raw: row.sourceRaw,
+      ...(row.serviceTier ? { service_tier: row.serviceTier } : {}),
       failed: row.failed,
+      ...(row.failed && row.failStatusCode !== null
+        ? { fail_status_code: row.failStatusCode }
+        : {}),
+      ...(row.failed && row.failBody ? { fail_body: row.failBody } : {}),
       ...(hasTimingData && row.firstByteLatencyMs !== null
         ? { first_byte_latency_ms: row.firstByteLatencyMs }
         : {}),
@@ -611,7 +630,6 @@ export function RequestEventsDetailsCard({
     if (!normalizedAuthIndex) return null;
     return authFileMap.get(normalizedAuthIndex) ?? null;
   }, [authFileMap, selectedFailureRow]);
-  const selectedFailureMessage = selectedCredentialInfo?.statusMessage?.trim() || '';
 
   return (
     <Card
@@ -754,6 +772,7 @@ export function RequestEventsDetailsCard({
                 <col className={styles.requestEventsTimestampCol} />
                 <col className={styles.requestEventsModelCol} />
                 <col className={styles.requestEventsSourceCol} />
+                <col className={styles.requestEventsTierCol} />
                 <col className={styles.requestEventsResultCol} />
                 {hasTimingData && <col className={styles.requestEventsTimingCol} />}
                 {hasTimingData && <col className={styles.requestEventsTimingCol} />}
@@ -772,6 +791,7 @@ export function RequestEventsDetailsCard({
                   <th>{t('usage_stats.request_events_timestamp')}</th>
                   <th>{t('usage_stats.model_name')}</th>
                   <th>{t('usage_stats.request_events_source')}</th>
+                  <th>{t('usage_stats.request_events_tier')}</th>
                   <th>{t('usage_stats.request_events_result')}</th>
                   {hasTimingData && <th>{t('usage_stats.first_byte_latency')}</th>}
                   {hasTimingData && <th>{t('usage_stats.generation_time')}</th>}
@@ -808,6 +828,13 @@ export function RequestEventsDetailsCard({
                       <span>{row.source}</span>
                       {row.sourceType && (
                         <span className={styles.credentialType}>{row.sourceType}</span>
+                      )}
+                    </td>
+                    <td>
+                      {row.serviceTier ? (
+                        <span className={styles.requestEventsTierBadge}>{row.serviceTier}</span>
+                      ) : (
+                        <span className={styles.requestEventsTierEmpty}>--</span>
                       )}
                     </td>
                     <td>
@@ -907,17 +934,25 @@ export function RequestEventsDetailsCard({
               </div>
             )}
 
+            {selectedFailureRow.failStatusCode !== null && (
+              <div className={styles.requestEventsFailureCredentialRow}>
+                <span className={styles.requestEventsFailureMetaLabel}>
+                  {t('usage_stats.request_events_failure_log_status_code')}
+                </span>
+                <span className={styles.requestEventsFailureMetaValue}>
+                  {selectedFailureRow.failStatusCode}
+                </span>
+              </div>
+            )}
+
             <div className={styles.requestEventsFailureMessageBlock}>
               <div className={styles.requestEventsFailureMetaLabel}>
-                {t('usage_stats.request_events_failure_log_message_label')}
+                {t('usage_stats.request_events_failure_log_body')}
               </div>
               <div className={styles.requestEventsFailureMessage}>
-                {selectedFailureMessage || t('usage_stats.request_events_failure_log_empty')}
+                {selectedFailureRow.failBody.trim() ||
+                  t('usage_stats.request_events_failure_log_body_empty')}
               </div>
-            </div>
-
-            <div className={styles.requestEventsFailureNote}>
-              {t('usage_stats.request_events_failure_log_note')}
             </div>
           </div>
         )}
