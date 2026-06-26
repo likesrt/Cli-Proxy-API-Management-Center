@@ -934,20 +934,16 @@ export function RequestEventsDetailsCard({
               </div>
             )}
 
-            {selectedFailureRow.failStatusCode !== null && (
-              <div className={styles.requestEventsFailureCredentialRow}>
-                <span className={styles.requestEventsFailureMetaLabel}>
-                  {t('usage_stats.request_events_failure_log_status_code')}
-                </span>
-                <span className={styles.requestEventsFailureMetaValue}>
-                  {selectedFailureRow.failStatusCode}
-                </span>
-              </div>
-            )}
-
             <div className={styles.requestEventsFailureMessageBlock}>
-              <div className={styles.requestEventsFailureMetaLabel}>
-                {t('usage_stats.request_events_failure_log_body')}
+              <div className={styles.requestEventsFailureBodyHeader}>
+                <span className={styles.requestEventsFailureMetaLabel}>
+                  {t('usage_stats.request_events_failure_log_body')}
+                </span>
+                {selectedFailureRow.failStatusCode !== null && (
+                  <span className={styles.requestEventsFailureStatusCode}>
+                    {selectedFailureRow.failStatusCode}
+                  </span>
+                )}
               </div>
               <div className={styles.requestEventsFailureMessage}>
                 {selectedFailureRow.failBody.trim() ||

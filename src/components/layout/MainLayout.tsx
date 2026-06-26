@@ -640,7 +640,15 @@ export function MainLayout() {
           },
         ]
       : []),
-  ];
+  ]
+    // Fork: hide the "Quick Start" entry from the sidebar while keeping the
+    // upstream route/page logic intact (see quickStartNavItem + /quick-start route).
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => item.kind === 'drawer' || item.path !== quickStartNavItem.path
+      ),
+    }));
   const navItems = navGroups.flatMap((group) => flattenNavItems(group.items));
   const navOrder = navItems.map((item) => item.path);
   const getRouteOrder = (pathname: string) => {

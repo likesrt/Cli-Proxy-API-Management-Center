@@ -1266,6 +1266,27 @@
   gap: 8px;
 }
 
+.requestEventsFailureBodyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.requestEventsFailureStatusCode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: $radius-full;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--failure-badge-text);
+  background: var(--failure-badge-bg);
+  border: 1px solid var(--failure-badge-border);
+}
+
 .requestEventsFailureMessage {
   padding: $spacing-sm;
   border-radius: $radius-md;
