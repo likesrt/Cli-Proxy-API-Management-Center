@@ -831,6 +831,57 @@
   }
 }
 
+// Tier Multiplier Modal
+.tierModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tierRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tierRowHead,
+.tierRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) 80px;
+  gap: 8px;
+  align-items: center;
+
+  @include mobile {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr) 64px;
+    gap: 6px;
+  }
+}
+
+.tierRowHead {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+
+  span {
+    padding: 0 2px;
+  }
+}
+
+.tierRow {
+  .input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+.tierRowDelete {
+  width: 100%;
+}
+
+.tierAddRow {
+  display: flex;
+}
+
 // Chart Section (80%比例)
 .chartSection {
   display: flex;

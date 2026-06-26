@@ -16,6 +16,11 @@ import {
   formatMappingListForTextarea,
   type SyncSettings,
 } from '@/utils/priceSync';
+import {
+  loadTierMultipliers,
+  saveTierMultipliers,
+  type TierMultiplierRule,
+} from '@/utils/tierMultiplier';
 import styles from '@/pages/UsagePage.module.scss';
 
 export interface PriceSettingsCardProps {
@@ -25,6 +30,13 @@ export interface PriceSettingsCardProps {
 }
 
 type SyncStatusType = 'info' | 'success' | 'error';
+
+/** Tier 倍率弹窗的可编辑行（倍率以字符串编辑，保存时转数字） */
+interface TierMultiplierDraft {
+  model: string;
+  tier: string;
+  multiplier: string;
+}
 
 export function PriceSettingsCard({
   modelNames,
@@ -53,6 +65,10 @@ export function PriceSettingsCard({
   const [providerPriorityText, setProviderPriorityText] = useState('');
   const [ignoredSuffixesText, setIgnoredSuffixesText] = useState('');
   const [modelMappingsText, setModelMappingsText] = useState('');
+
+  // Tier multiplier modal state
+  const [tierOpen, setTierOpen] = useState(false);
+  const [tierRows, setTierRows] = useState<TierMultiplierDraft[]>([]);
 
   const handleSavePrice = () => {
     if (!selectedModel) return;
@@ -112,6 +128,48 @@ export function PriceSettingsCard({
     ],
     [modelNames, t]
   );
+
+  // ---- Tier multiplier modal handlers ----
+
+  const handleOpenTier = useCallback(() => {
+    setTierRows(
+      loadTierMultipliers().map((rule) => ({
+        model: rule.model,
+        tier: rule.tier,
+        multiplier: String(rule.multiplier),
+      }))
+    );
+    setTierOpen(true);
+  }, []);
+
+  const handleAddTierRow = useCallback(() => {
+    setTierRows((rows) => [...rows, { model: '', tier: '', multiplier: '' }]);
+  }, []);
+
+  const handleTierRowChange = useCallback(
+    (index: number, field: keyof TierMultiplierDraft, value: string) => {
+      setTierRows((rows) => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    },
+    []
+  );
+
+  const handleDeleteTierRow = useCallback((index: number) => {
+    setTierRows((rows) => rows.filter((_, i) => i !== index));
+  }, []);
+
+  const handleSaveTier = useCallback(() => {
+    const rules: TierMultiplierRule[] = tierRows.map((row) => ({
+      model: row.model,
+      tier: row.tier,
+      multiplier: Number.parseFloat(row.multiplier),
+    }));
+    saveTierMultipliers(rules);
+    // 复用既有响应式链路：刷新 modelPrices 引用，触发本页所有依赖 [modelPrices]
+    // 的 memo（模型统计/趋势/总花费/sparkline/API密钥统计）重新计算花费。
+    // 凭证中心为独立路由，切换时会自然读取已更新的内存索引。
+    onPricesChange({ ...modelPrices });
+    setTierOpen(false);
+  }, [tierRows, onPricesChange, modelPrices]);
 
   // ---- Sync modal handlers ----
 
@@ -210,14 +268,19 @@ export function PriceSettingsCard({
       ? `${styles.syncStatus} ${styles.syncStatusError}`
       : `${styles.syncStatus} ${styles.syncStatusInfo}`;
 
-  const syncButton = (
-    <Button variant="secondary" size="sm" onClick={handleOpenSync}>
-      {t('usage_stats.price_sync_button')}
-    </Button>
+  const headerActions = (
+    <div className={styles.priceActions}>
+      <Button variant="secondary" size="sm" onClick={handleOpenTier}>
+        {t('usage_stats.tier_multiplier_button')}
+      </Button>
+      <Button variant="secondary" size="sm" onClick={handleOpenSync}>
+        {t('usage_stats.price_sync_button')}
+      </Button>
+    </div>
   );
 
   return (
-    <Card title={t('usage_stats.model_price_settings')} extra={syncButton}>
+    <Card title={t('usage_stats.model_price_settings')} extra={headerActions}>
       <div className={styles.pricingSection}>
         {/* Price Form */}
         <div className={styles.priceForm}>
@@ -453,6 +516,81 @@ export function PriceSettingsCard({
               {syncStatusMsg}
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Tier Multiplier Modal */}
+      <Modal
+        open={tierOpen}
+        title={t('usage_stats.tier_multiplier_title')}
+        onClose={() => setTierOpen(false)}
+        footer={
+          <div className={styles.priceActions}>
+            <Button variant="secondary" onClick={() => setTierOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="primary" onClick={handleSaveTier}>
+              {t('common.save')}
+            </Button>
+          </div>
+        }
+        width={560}
+      >
+        <div className={styles.tierModalBody}>
+          <p className={styles.syncDesc}>{t('usage_stats.tier_multiplier_desc')}</p>
+
+          <div className={styles.tierRows}>
+            <div className={styles.tierRowHead}>
+              <span>{t('usage_stats.tier_multiplier_model')}</span>
+              <span>{t('usage_stats.tier_multiplier_tier')}</span>
+              <span>{t('usage_stats.tier_multiplier_rate')}</span>
+              <span className={styles.tierRowActionCol} />
+            </div>
+
+            {tierRows.length === 0 ? (
+              <div className={styles.hint}>{t('usage_stats.tier_multiplier_empty')}</div>
+            ) : (
+              tierRows.map((row, index) => (
+                <div className={styles.tierRow} key={index}>
+                  <input
+                    className="input"
+                    value={row.model}
+                    onChange={(e) => handleTierRowChange(index, 'model', e.target.value)}
+                    placeholder={t('usage_stats.tier_multiplier_model')}
+                  />
+                  <input
+                    className="input"
+                    value={row.tier}
+                    onChange={(e) => handleTierRowChange(index, 'tier', e.target.value)}
+                    placeholder={t('usage_stats.tier_multiplier_tier')}
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={row.multiplier}
+                    onChange={(e) => handleTierRowChange(index, 'multiplier', e.target.value)}
+                    placeholder="1.0"
+                  />
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className={styles.tierRowDelete}
+                    onClick={() => handleDeleteTierRow(index)}
+                  >
+                    {t('common.delete')}
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className={styles.tierAddRow}>
+            <Button variant="secondary" size="sm" onClick={handleAddTierRow}>
+              {t('usage_stats.tier_multiplier_add')}
+            </Button>
+          </div>
         </div>
       </Modal>
     </Card>

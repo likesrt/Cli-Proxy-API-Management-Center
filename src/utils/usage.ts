@@ -14,6 +14,7 @@ import {
 } from './usage/latency';
 import { maskApiKey } from './format';
 import { parseTimestampMs } from './timestamp';
+import { resolveTierMultiplier } from './tierMultiplier';
 
 export type { DurationFormatOptions, LatencyStats } from './usage/latency';
 export {
@@ -1188,7 +1189,11 @@ export function calculateCost(
   const cachedCost = (cachedTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.cache) || 0);
   const completionCost =
     (completionTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.completion) || 0);
-  const total = promptCost + cachedCost + completionCost;
+  // fork: 命中「模型名称 + Service Tier」规则时按配置倍率放大花费。
+  // 兼容 service_tier / serviceTier 两种字段名（getModelStats/getApiStats 透传原始 record，未做规范化）。
+  const serviceTier = detail.service_tier ?? (detail as { serviceTier?: string }).serviceTier;
+  const multiplier = resolveTierMultiplier(modelName, serviceTier);
+  const total = (promptCost + cachedCost + completionCost) * multiplier;
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
 
