@@ -7,18 +7,21 @@ import { computeKeyStats, normalizeUsageData, type KeyStats, type UsageDeleteRes
 
 const USAGE_TIMEOUT_MS = 60 * 1000;
 
+// usage-statistics 插件端点（官方 CPA 已移除内建 usage API，改由插件提供）。
+const USAGE_ENDPOINT = '/plugins/usage-statistics/usage';
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
    */
   getUsage: (params?: UsageQueryRange) =>
-    apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS, params }),
+    apiClient.get<Record<string, unknown>>(USAGE_ENDPOINT, { timeout: USAGE_TIMEOUT_MS, params }),
 
   /**
    * 删除指定 usage 记录
    */
   deleteUsage: (ids: string[]) =>
-    apiClient.delete<UsageDeleteResponse>('/usage', {
+    apiClient.delete<UsageDeleteResponse>(USAGE_ENDPOINT, {
       timeout: USAGE_TIMEOUT_MS,
       data: { ids },
     }),

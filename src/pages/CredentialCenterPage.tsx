@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AuthRefreshQueueCountdownCard } from '@/components/credentialCenter/AuthRefreshQueueCountdownCard';
 import { CodexCredentialQuotaCard } from '@/components/credentialCenter/CodexCredentialQuotaCard';
 import { AntigravityCredentialQuotaCard } from '@/components/credentialCenter/AntigravityCredentialQuotaCard';
 import { CredentialStatsCard } from '@/components/credentialCenter/CredentialStatsCard';
@@ -9,9 +8,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useUsageData, type UsagePayload } from '@/components/usage';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { authFilesApi } from '@/services/api/authFiles';
-import { authRefreshQueueApi } from '@/services/api/authRefreshQueue';
 import type { AuthFileItem } from '@/types/authFile';
-import type { AuthRefreshQueueResponse } from '@/types/authRefreshQueue';
 import { filterUsageByTimeRange, type UsageTimeRange } from '@/utils/usage';
 import {
   DEFAULT_USAGE_TIME_RANGE,
@@ -51,9 +48,6 @@ export function CredentialCenterPage() {
     refreshFullRange: true
   });
   const [authFiles, setAuthFiles] = useState<AuthFileItem[]>([]);
-  const [authRefreshQueue, setAuthRefreshQueue] = useState<AuthRefreshQueueResponse | null>(null);
-  const [authRefreshQueueLoading, setAuthRefreshQueueLoading] = useState(false);
-  const [authRefreshQueueError, setAuthRefreshQueueError] = useState<string | null>(null);
 
   const loadAuthFiles = useCallback(async () => {
     const res = await authFilesApi.list();
@@ -62,32 +56,18 @@ export function CredentialCenterPage() {
     setAuthFiles(files);
   }, []);
 
-  const loadAuthRefreshQueue = useCallback(async () => {
-    setAuthRefreshQueueLoading(true);
-    try {
-      const payload = await authRefreshQueueApi.list();
-      setAuthRefreshQueue(payload);
-      setAuthRefreshQueueError(null);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('credential_center.refresh_queue_load_error');
-      setAuthRefreshQueueError(message || t('credential_center.refresh_queue_load_error'));
-    } finally {
-      setAuthRefreshQueueLoading(false);
-    }
-  }, [t]);
-
   const handleRefresh = useCallback(async () => {
-    await Promise.all([loadUsage(), loadAuthFiles(), loadAuthRefreshQueue()]);
-  }, [loadAuthFiles, loadAuthRefreshQueue, loadUsage]);
+    await Promise.all([loadUsage(), loadAuthFiles()]);
+  }, [loadAuthFiles, loadUsage]);
 
   useHeaderRefresh(handleRefresh);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void Promise.all([loadAuthFiles(), loadAuthRefreshQueue()]).catch(() => {});
+      void loadAuthFiles().catch(() => {});
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadAuthFiles, loadAuthRefreshQueue]);
+  }, [loadAuthFiles]);
 
   useEffect(() => {
     try {
@@ -139,9 +119,9 @@ export function CredentialCenterPage() {
             variant="secondary"
             size="sm"
             onClick={() => void handleRefresh().catch(() => {})}
-            disabled={loading || authRefreshQueueLoading}
+            disabled={loading}
           >
-            {loading || authRefreshQueueLoading ? t('common.loading') : t('usage_stats.refresh')}
+            {loading ? t('common.loading') : t('usage_stats.refresh')}
           </Button>
           {lastRefreshedAt && (
             <span className={styles.lastRefreshed}>
@@ -152,14 +132,6 @@ export function CredentialCenterPage() {
       </div>
 
       {error && <div className={styles.errorBox}>{error}</div>}
-
-      <AuthRefreshQueueCountdownCard
-        queue={authRefreshQueue?.queue ?? []}
-        loading={authRefreshQueueLoading}
-        error={authRefreshQueueError}
-        generatedAt={authRefreshQueue?.generated_at ?? null}
-        onRefresh={loadAuthRefreshQueue}
-      />
 
       <div className={styles.credentialCenterGrid}>
         <CredentialStatsCard

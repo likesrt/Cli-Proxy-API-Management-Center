@@ -334,15 +334,15 @@ export function RequestEventsDetailsCard({
       const generationMs = extractGenerationMs(detail);
       const tps = generationMs && generationMs > 0 ? outputTokens / (generationMs / 1000) : null;
       const thinking = detail.thinking ?? null;
-      const thinkingEffort = normalizeThinkingText(detail.thinking_effort);
+      const thinkingEffort = normalizeThinkingText(detail.reasoning_effort);
       const thinkingLabel = thinkingEffort || formatThinkingLabel(thinking);
       const cacheHitRatio = inputTokens > 0 ? cachedTokens / inputTokens : null;
       const serviceTier = normalizeThinkingText(detail.service_tier);
       const failStatusCode =
-        typeof detail.fail_status_code === 'number' && Number.isFinite(detail.fail_status_code)
-          ? detail.fail_status_code
+        typeof detail.failure_status_code === 'number' && Number.isFinite(detail.failure_status_code)
+          ? detail.failure_status_code
           : null;
-      const failBody = typeof detail.fail_body === 'string' ? detail.fail_body : '';
+      const failBody = typeof detail.failure_body === 'string' ? detail.failure_body : '';
 
       return {
         id: backendId ?? `${timestamp}-${model}-${sourceKey}-${authIndex}-${index}`,
@@ -507,8 +507,8 @@ export function RequestEventsDetailsCard({
       'source_raw',
       'service_tier',
       'result',
-      ...(hasTimingData ? ['first_byte_latency_ms', 'generation_ms', 'tps'] : []),
-      'thinking_effort',
+      ...(hasTimingData ? ['ttft_ms', 'generation_ms', 'tps'] : []),
+      'reasoning_effort',
       'input_tokens',
       'output_tokens',
       'reasoning_tokens',
@@ -563,15 +563,15 @@ export function RequestEventsDetailsCard({
       ...(row.serviceTier ? { service_tier: row.serviceTier } : {}),
       failed: row.failed,
       ...(row.failed && row.failStatusCode !== null
-        ? { fail_status_code: row.failStatusCode }
+        ? { failure_status_code: row.failStatusCode }
         : {}),
-      ...(row.failed && row.failBody ? { fail_body: row.failBody } : {}),
+      ...(row.failed && row.failBody ? { failure_body: row.failBody } : {}),
       ...(hasTimingData && row.firstByteLatencyMs !== null
-        ? { first_byte_latency_ms: row.firstByteLatencyMs }
+        ? { ttft_ms: row.firstByteLatencyMs }
         : {}),
       ...(hasTimingData && row.generationMs !== null ? { generation_ms: row.generationMs } : {}),
       ...(hasTimingData && row.tps !== null ? { tps: row.tps } : {}),
-      ...(row.thinkingLabel !== '-' ? { thinking_effort: row.thinkingLabel } : {}),
+      ...(row.thinkingLabel !== '-' ? { reasoning_effort: row.thinkingLabel } : {}),
       tokens: {
         input_tokens: row.inputTokens,
         output_tokens: row.outputTokens,

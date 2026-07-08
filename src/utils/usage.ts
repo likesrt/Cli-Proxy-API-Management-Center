@@ -67,22 +67,23 @@ export interface UsageDetail {
   source: string;
   auth_index: string | number | null;
   latency_ms?: number;
-  first_byte_latency_ms?: number;
-  generation_ms?: number;
+  ttft_ms?: number;
   tokens: {
     input_tokens: number;
     output_tokens: number;
     reasoning_tokens: number;
     cached_tokens: number;
     cache_tokens?: number;
+    cache_read_tokens?: number;
+    cache_creation_tokens?: number;
     total_tokens: number;
   };
   thinking?: UsageThinking | null;
-  thinking_effort?: string;
+  reasoning_effort?: string;
   service_tier?: string;
   failed: boolean;
-  fail_status_code?: number;
-  fail_body?: string;
+  failure_status_code?: number;
+  failure_body?: string;
   __modelName?: string;
   __timestampMs?: number;
 }
@@ -246,6 +247,8 @@ const normalizeUsageTokens = (value: unknown): UsageDetail['tokens'] => {
     toNonNegativeNumber(tokens.cached_tokens) ?? 0,
     toNonNegativeNumber(tokens.cache_tokens) ?? 0
   );
+  const cacheReadTokens = toNonNegativeNumber(tokens.cache_read_tokens);
+  const cacheCreationTokens = toNonNegativeNumber(tokens.cache_creation_tokens);
   const totalTokens =
     toNonNegativeNumber(tokens.total_tokens) ??
     inputTokens + outputTokens + reasoningTokens + cachedTokens;
@@ -256,6 +259,8 @@ const normalizeUsageTokens = (value: unknown): UsageDetail['tokens'] => {
     reasoning_tokens: reasoningTokens,
     cached_tokens: cachedTokens,
     ...(tokens.cache_tokens !== undefined ? { cache_tokens: cachedTokens } : {}),
+    ...(cacheReadTokens !== null ? { cache_read_tokens: cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== null ? { cache_creation_tokens: cacheCreationTokens } : {}),
     total_tokens: totalTokens,
   };
 };
@@ -286,18 +291,18 @@ const normalizeFailBody = (value: unknown): string | undefined => {
 };
 
 /**
- * 提取请求明细中的服务层级与失败信息(service_tier / fail_status_code / fail_body)。
+ * 提取请求明细中的服务层级与失败信息(service_tier / failure_status_code / failure_body)。
  */
 const extractUsageStatusFields = (
   detail: Record<string, unknown>
-): Pick<UsageDetail, 'service_tier' | 'fail_status_code' | 'fail_body'> => {
+): Pick<UsageDetail, 'service_tier' | 'failure_status_code' | 'failure_body'> => {
   const serviceTier = normalizeServiceTier(detail.service_tier ?? detail.serviceTier);
-  const failStatusCode = normalizeFailStatusCode(detail.fail_status_code ?? detail.failStatusCode);
-  const failBody = normalizeFailBody(detail.fail_body ?? detail.failBody);
+  const failStatusCode = normalizeFailStatusCode(detail.failure_status_code ?? detail.fail_status_code);
+  const failBody = normalizeFailBody(detail.failure_body ?? detail.fail_body);
   return {
     ...(serviceTier ? { service_tier: serviceTier } : {}),
-    ...(failStatusCode !== undefined ? { fail_status_code: failStatusCode } : {}),
-    ...(failBody !== undefined ? { fail_body: failBody } : {}),
+    ...(failStatusCode !== undefined ? { failure_status_code: failStatusCode } : {}),
+    ...(failBody !== undefined ? { failure_body: failBody } : {}),
   };
 };
 
@@ -315,17 +320,16 @@ const normalizeUsageRecordDetail = (
   const timestampMs = parseTimestampMs(timestamp);
   const id = typeof detail.id === 'string' && detail.id.trim() ? detail.id.trim() : undefined;
   const latencyMs = toNonNegativeNumber(detail.latency_ms);
-  const firstByteLatencyMs = extractFirstByteLatencyMs(detail);
-  const generationMs = extractGenerationMs(detail);
+  const ttftMs = extractFirstByteLatencyMs(detail);
   const source =
     typeof detail.source === 'string'
       ? detail.source
       : detail.source === null || detail.source === undefined
         ? ''
         : String(detail.source);
-  const thinkingEffort =
-    typeof detail.thinking_effort === 'string' && detail.thinking_effort.trim()
-      ? detail.thinking_effort.trim()
+  const reasoningEffort =
+    typeof detail.reasoning_effort === 'string' && detail.reasoning_effort.trim()
+      ? detail.reasoning_effort.trim()
       : undefined;
 
   const endpointMatch = endpoint.match(USAGE_ENDPOINT_METHOD_REGEX);
@@ -336,11 +340,10 @@ const normalizeUsageRecordDetail = (
     source,
     auth_index: (detail.auth_index ?? detail.authIndex ?? detail.AuthIndex ?? null) as UsageDetail['auth_index'],
     ...(latencyMs !== null ? { latency_ms: latencyMs } : {}),
-    ...(firstByteLatencyMs !== null ? { first_byte_latency_ms: firstByteLatencyMs } : {}),
-    ...(generationMs !== null ? { generation_ms: generationMs } : {}),
+    ...(ttftMs !== null ? { ttft_ms: ttftMs } : {}),
     tokens: normalizeUsageTokens(detail.tokens),
     thinking: normalizeUsageThinking(detail.thinking),
-    ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     ...extractUsageStatusFields(detail),
     failed: detail.failed === true,
     __modelName: modelName,
@@ -458,27 +461,25 @@ export function normalizeUsageData(usageData: unknown): UsageStatsSnapshot | Rec
   return buildUsageSnapshotFromDetails(collectBackendUsageDetails(usageRecord));
 }
 
+/**
+ * 计算生成耗时。新版后端已移除 generation_ms，改用 latency_ms - ttft_ms 推算。
+ */
 export function extractGenerationMs(detail: unknown): number | null {
   const record = isRecord(detail) ? detail : null;
-  const generationMs = toNonNegativeNumber(record?.generation_ms);
-  if (generationMs !== null) {
-    return generationMs;
-  }
-
   const latencyMs = toNonNegativeNumber(record?.latency_ms);
   if (latencyMs === null) {
     return null;
   }
 
-  const firstByteLatencyMs = toNonNegativeNumber(record?.first_byte_latency_ms);
-  return firstByteLatencyMs === null ? latencyMs : Math.max(latencyMs - firstByteLatencyMs, 0);
+  const ttftMs = toNonNegativeNumber(record?.ttft_ms);
+  return ttftMs === null ? latencyMs : Math.max(latencyMs - ttftMs, 0);
 }
 
 export function extractFirstByteLatencyMs(detail: unknown): number | null {
   const record = isRecord(detail) ? detail : null;
-  const firstByteLatencyMs = toNonNegativeNumber(record?.first_byte_latency_ms);
-  if (firstByteLatencyMs !== null) {
-    return firstByteLatencyMs;
+  const ttftMs = toNonNegativeNumber(record?.ttft_ms);
+  if (ttftMs !== null) {
+    return ttftMs;
   }
 
   return toNonNegativeNumber(record?.latency_ms) !== null ? 0 : null;
@@ -914,12 +915,11 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
         const timestamp = detailRaw.timestamp;
         const timestampMs = parseTimestampMs(timestamp);
         const latencyMs = extractLatencyMs(detailRaw);
-        const generationMs = extractGenerationMs(detailRaw);
-        const firstByteLatencyMs = extractFirstByteLatencyMs(detailRaw);
+        const ttftMs = extractFirstByteLatencyMs(detailRaw);
         const id = typeof detailRaw.id === 'string' && detailRaw.id.trim() ? detailRaw.id.trim() : undefined;
-        const thinkingEffort =
-          typeof detailRaw.thinking_effort === 'string' && detailRaw.thinking_effort.trim()
-            ? detailRaw.thinking_effort.trim()
+        const reasoningEffort =
+          typeof detailRaw.reasoning_effort === 'string' && detailRaw.reasoning_effort.trim()
+            ? detailRaw.reasoning_effort.trim()
             : undefined;
         details.push({
           ...(id ? { id } : {}),
@@ -930,11 +930,10 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
             detailRaw?.AuthIndex ??
             null) as UsageDetail['auth_index'],
           latency_ms: latencyMs ?? undefined,
-          first_byte_latency_ms: firstByteLatencyMs ?? undefined,
-          generation_ms: generationMs ?? undefined,
+          ttft_ms: ttftMs ?? undefined,
           tokens: normalizeUsageTokens(detailRaw.tokens),
           thinking: normalizeUsageThinking(detailRaw.thinking),
-          ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
           ...extractUsageStatusFields(detailRaw),
           failed: detailRaw.failed === true,
           __modelName: modelName,
@@ -1002,12 +1001,11 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
         const timestamp = detailRaw.timestamp;
         const timestampMs = parseTimestampMs(timestamp);
         const latencyMs = extractLatencyMs(detailRaw);
-        const generationMs = extractGenerationMs(detailRaw);
-        const firstByteLatencyMs = extractFirstByteLatencyMs(detailRaw);
+        const ttftMs = extractFirstByteLatencyMs(detailRaw);
         const id = typeof detailRaw.id === 'string' && detailRaw.id.trim() ? detailRaw.id.trim() : undefined;
-        const thinkingEffort =
-          typeof detailRaw.thinking_effort === 'string' && detailRaw.thinking_effort.trim()
-            ? detailRaw.thinking_effort.trim()
+        const reasoningEffort =
+          typeof detailRaw.reasoning_effort === 'string' && detailRaw.reasoning_effort.trim()
+            ? detailRaw.reasoning_effort.trim()
             : undefined;
         details.push({
           ...(id ? { id } : {}),
@@ -1018,11 +1016,10 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
             detailRaw?.AuthIndex ??
             null) as UsageDetail['auth_index'],
           latency_ms: latencyMs ?? undefined,
-          first_byte_latency_ms: firstByteLatencyMs ?? undefined,
-          generation_ms: generationMs ?? undefined,
+          ttft_ms: ttftMs ?? undefined,
           tokens: normalizeUsageTokens(detailRaw.tokens),
           thinking: normalizeUsageThinking(detailRaw.thinking),
-          ...(thinkingEffort ? { thinking_effort: thinkingEffort } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
           ...extractUsageStatusFields(detailRaw),
           failed: detailRaw.failed === true,
           __modelName: modelName,
