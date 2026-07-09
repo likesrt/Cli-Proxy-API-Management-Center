@@ -113,6 +113,38 @@ const normalizeThinkingText = (value: unknown): string => {
   return value.trim();
 };
 
+const HTML_NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+// Failure bodies are stored HTML-escaped upstream (e.g. `&#34;` / `&#39;`); decode
+// them back to plain text before rendering. React still escapes on output, so the
+// decoded string is rendered safely as text content, never as HTML.
+const decodeHtmlEntities = (value: string): string => {
+  if (!value || value.indexOf('&') === -1) return value;
+  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, entity: string) => {
+    if (entity[0] === '#') {
+      const isHex = entity[1] === 'x' || entity[1] === 'X';
+      const codePoint = Number.parseInt(entity.slice(isHex ? 2 : 1), isHex ? 16 : 10);
+      if (!Number.isFinite(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+        return match;
+      }
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return match;
+      }
+    }
+    const named = HTML_NAMED_ENTITIES[entity];
+    return named ?? match;
+  });
+};
+
 const formatThinkingLabel = (thinking: UsageThinking | null): string => {
   if (!thinking) return '-';
 
@@ -342,7 +374,8 @@ export function RequestEventsDetailsCard({
         typeof detail.failure_status_code === 'number' && Number.isFinite(detail.failure_status_code)
           ? detail.failure_status_code
           : null;
-      const failBody = typeof detail.failure_body === 'string' ? detail.failure_body : '';
+      const failBody =
+        typeof detail.failure_body === 'string' ? decodeHtmlEntities(detail.failure_body) : '';
 
       return {
         id: backendId ?? `${timestamp}-${model}-${sourceKey}-${authIndex}-${index}`,
