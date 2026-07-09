@@ -2,12 +2,11 @@ import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
 import {
-  IconDiamond,
   IconDollarSign,
   IconSatellite,
-  IconTimer,
-  IconTrendingUp
+  IconTimer
 } from '@/components/ui/icons';
+import { IconDiamond, IconTrendingUp } from './monitorIcons';
 import {
   calculateRecentPerMinuteRates,
   calculateTotalCost,
