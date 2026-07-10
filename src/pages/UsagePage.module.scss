@@ -772,6 +772,16 @@
   gap: 10px;
 }
 
+// Each context tier rendered as a compact card so multiple tiers stay separated
+.tierItem {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
 // Price Sync Modal
 .syncModalBody {
   display: flex;

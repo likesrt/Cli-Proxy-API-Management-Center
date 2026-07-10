@@ -541,61 +541,67 @@ export function PriceSettingsCard({
               {t('usage_stats.model_price_context_tier_hint')}
             </span>
             {editTiers.map((tier, index) => (
-              <div className={styles.formRow} key={index}>
-                <div className={styles.formField}>
-                  <label>{t('usage_stats.model_price_context_tier_threshold')}</label>
-                  <Input
-                    type="number"
-                    value={tier.threshold}
-                    onChange={(e) => handleTierChange(index, 'threshold', e.target.value)}
-                    placeholder="200000"
-                    step="1"
-                    min="0"
-                  />
+              <div className={styles.tierItem} key={index}>
+                <div className={styles.formRow}>
+                  <div className={styles.formField}>
+                    <label>{t('usage_stats.model_price_context_tier_threshold')}</label>
+                    <Input
+                      type="number"
+                      value={tier.threshold}
+                      onChange={(e) => handleTierChange(index, 'threshold', e.target.value)}
+                      placeholder="200000"
+                      step="1"
+                      min="0"
+                    />
+                  </div>
+                  <Button variant="danger" size="sm" onClick={() => handleDeleteTier(index)}>
+                    {t('common.delete')}
+                  </Button>
                 </div>
-                <div className={styles.formField}>
-                  <label>{t('usage_stats.model_price_input')}</label>
-                  <Input
-                    type="number"
-                    value={tier.input}
-                    onChange={(e) => handleTierChange(index, 'input', e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
+                <div className={styles.formRow}>
+                  <div className={styles.formField}>
+                    <label>{t('usage_stats.model_price_input')}</label>
+                    <Input
+                      type="number"
+                      value={tier.input}
+                      onChange={(e) => handleTierChange(index, 'input', e.target.value)}
+                      placeholder="0.00"
+                      step="0.0001"
+                    />
+                  </div>
+                  <div className={styles.formField}>
+                    <label>{t('usage_stats.model_price_output')}</label>
+                    <Input
+                      type="number"
+                      value={tier.output}
+                      onChange={(e) => handleTierChange(index, 'output', e.target.value)}
+                      placeholder="0.00"
+                      step="0.0001"
+                    />
+                  </div>
                 </div>
-                <div className={styles.formField}>
-                  <label>{t('usage_stats.model_price_output')}</label>
-                  <Input
-                    type="number"
-                    value={tier.output}
-                    onChange={(e) => handleTierChange(index, 'output', e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
+                <div className={styles.formRow}>
+                  <div className={styles.formField}>
+                    <label>{t('usage_stats.model_price_cache_create')}</label>
+                    <Input
+                      type="number"
+                      value={tier.cacheCreate}
+                      onChange={(e) => handleTierChange(index, 'cacheCreate', e.target.value)}
+                      placeholder="0.00"
+                      step="0.0001"
+                    />
+                  </div>
+                  <div className={styles.formField}>
+                    <label>{t('usage_stats.model_price_cache_read')}</label>
+                    <Input
+                      type="number"
+                      value={tier.cacheRead}
+                      onChange={(e) => handleTierChange(index, 'cacheRead', e.target.value)}
+                      placeholder="0.00"
+                      step="0.0001"
+                    />
+                  </div>
                 </div>
-                <div className={styles.formField}>
-                  <label>{t('usage_stats.model_price_cache_create')}</label>
-                  <Input
-                    type="number"
-                    value={tier.cacheCreate}
-                    onChange={(e) => handleTierChange(index, 'cacheCreate', e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
-                </div>
-                <div className={styles.formField}>
-                  <label>{t('usage_stats.model_price_cache_read')}</label>
-                  <Input
-                    type="number"
-                    value={tier.cacheRead}
-                    onChange={(e) => handleTierChange(index, 'cacheRead', e.target.value)}
-                    placeholder="0.00"
-                    step="0.0001"
-                  />
-                </div>
-                <Button variant="danger" size="sm" onClick={() => handleDeleteTier(index)}>
-                  {t('common.delete')}
-                </Button>
               </div>
             ))}
           </div>
