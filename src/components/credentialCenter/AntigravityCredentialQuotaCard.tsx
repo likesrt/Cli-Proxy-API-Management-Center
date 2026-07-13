@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { IconRefreshCw } from '@/components/ui/icons';
 import type { UsagePayload } from '@/components/usage';
 import { useQuotaStore } from '@/stores';
-import type { AuthFileItem, AntigravityQuotaState, AntigravityQuotaGroup } from '@/types';
+import type { AuthFileItem, AntigravityQuotaState, AntigravityQuotaGroup, AntigravityQuotaBucket } from '@/types';
 import {
   CREDENTIAL_COST_WINDOW_GRACE_MS,
   getCredentialRowKeyForFile,
@@ -94,15 +94,59 @@ const selectQuotaGroup = (
   return groups.find((g) => matchesKeyword(g, ['gemini'])) ?? null;
 };
 
-const getRemainingPercentValue = (group: AntigravityQuotaGroup | null): number | null => {
+const WINDOW_UNIT_MS: Record<string, number> = {
+  s: 1000,
+  m: 60 * 1000,
+  h: 60 * 60 * 1000,
+  d: 24 * 60 * 60 * 1000,
+  w: 7 * 24 * 60 * 60 * 1000
+};
+
+// Estimate a bucket window's length so the longest one (e.g. weekly over 5h) can be selected.
+// Handles named windows ("weekly"/"daily"/"monthly") and compact forms ("5h", "24h", "7d").
+const getWindowDurationMs = (window: string | undefined): number => {
+  if (!window) return 0;
+  const normalized = window.trim().toLowerCase();
+  if (!normalized) return 0;
+  if (normalized.includes('week')) return 7 * 24 * 60 * 60 * 1000;
+  if (normalized.includes('month')) return 30 * 24 * 60 * 60 * 1000;
+  if (normalized.includes('day') || normalized.includes('dai')) return 24 * 60 * 60 * 1000;
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*([smhdw])/);
+  if (match) {
+    const value = Number(match[1]);
+    const unitMs = WINDOW_UNIT_MS[match[2]];
+    if (Number.isFinite(value) && unitMs) return value * unitMs;
+  }
+  return 0;
+};
+
+// Pick the bucket covering the longest time window (e.g. weekly rather than 5h). When the
+// window field is missing/unknown, fall back to the latest reset time as a length proxy.
+const selectLongestWindowBucket = (
+  group: AntigravityQuotaGroup | null
+): AntigravityQuotaBucket | null => {
   if (!group || !group.buckets || group.buckets.length === 0) return null;
-  // Use the minimum remaining fraction across all buckets
-  const remainingFractions = group.buckets
-    .map((b) => b.remainingFraction)
-    .filter((f): f is number => typeof f === 'number');
-  if (remainingFractions.length === 0) return null;
-  const minFraction = Math.min(...remainingFractions);
-  return Math.max(0, Math.min(100, minFraction * 100));
+  let best: AntigravityQuotaBucket | null = null;
+  let bestDuration = -1;
+  let bestResetMs = Number.NEGATIVE_INFINITY;
+  for (const bucket of group.buckets) {
+    const duration = getWindowDurationMs(bucket.window);
+    const parsedReset = bucket.resetTime ? Date.parse(bucket.resetTime) : Number.NaN;
+    const resetMs = Number.isFinite(parsedReset) ? parsedReset : Number.NEGATIVE_INFINITY;
+    if (duration > bestDuration || (duration === bestDuration && resetMs > bestResetMs)) {
+      best = bucket;
+      bestDuration = duration;
+      bestResetMs = resetMs;
+    }
+  }
+  return best;
+};
+
+const getRemainingPercentValue = (group: AntigravityQuotaGroup | null): number | null => {
+  // Use the longest time window (e.g. weekly rather than 5h) as the source of truth.
+  const bucket = selectLongestWindowBucket(group);
+  if (!bucket || typeof bucket.remainingFraction !== 'number') return null;
+  return Math.max(0, Math.min(100, bucket.remainingFraction * 100));
 };
 
 const getRemainingPercentLabel = (group: AntigravityQuotaGroup | null): string => {
@@ -120,15 +164,11 @@ const estimateQuotaCost = (cost: number | null | undefined, group: AntigravityQu
 };
 
 const getResetTimeMs = (group: AntigravityQuotaGroup | null): number | null => {
-  if (!group || !group.buckets || group.buckets.length === 0) return null;
-  // Use the earliest reset time across all buckets
-  const resetTimes = group.buckets
-    .map((b) => b.resetTime)
-    .filter((t): t is string => typeof t === 'string' && t.length > 0)
-    .map((t) => Date.parse(t))
-    .filter((ms) => Number.isFinite(ms) && ms > 0);
-  if (resetTimes.length === 0) return null;
-  return Math.min(...resetTimes);
+  // Align the usage window with the longest quota window (e.g. weekly rather than 5h).
+  const bucket = selectLongestWindowBucket(group);
+  if (!bucket || !bucket.resetTime) return null;
+  const ms = Date.parse(bucket.resetTime);
+  return Number.isFinite(ms) && ms > 0 ? ms : null;
 };
 
 const formatResetLabel = (resetTime: string | undefined): string => {
@@ -438,10 +478,13 @@ export function AntigravityCredentialQuotaCard({
 
     if (!group) return <span className={styles.quotaStatus}>--</span>;
 
+    // Show the longest window's reset (e.g. weekly rather than 5h) to match the quota figure.
+    const resetLabel = formatResetLabel(selectLongestWindowBucket(group)?.resetTime);
+
     return (
-      <span className={styles.quotaLimitCellInner} title={formatResetLabel(group.buckets[0]?.resetTime)}>
+      <span className={styles.quotaLimitCellInner} title={resetLabel}>
         <span className={styles.quotaLimitPrimary}>{getRemainingPercentLabel(group)}</span>
-        <span className={styles.quotaLimitSecondary}>{formatResetLabel(group.buckets[0]?.resetTime)}</span>
+        <span className={styles.quotaLimitSecondary}>{resetLabel}</span>
       </span>
     );
   };
