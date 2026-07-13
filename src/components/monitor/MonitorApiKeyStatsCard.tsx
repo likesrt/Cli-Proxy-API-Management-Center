@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useDeferredValue, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import type { UsagePayload } from '@/components/usage';
@@ -87,9 +87,10 @@ export function MonitorApiKeyStatsCard({
   const { t } = useTranslation();
   const [sortKey, setSortKey] = useState<SortKey>('requests');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const deferredUsage = useDeferredValue(usage);
 
   const rows = useMemo<ApiKeyStatsRow[]>(() => {
-    const apis = isRecord(usage?.apis) ? usage.apis : null;
+    const apis = isRecord(deferredUsage?.apis) ? deferredUsage.apis : null;
     if (!apis) return [];
 
     return Object.entries(apis).map(([apiKey, apiEntry]) => {
@@ -166,7 +167,7 @@ export function MonitorApiKeyStatsCard({
         averageTps: totals.tpsSampleCount > 0 ? totals.totalTps / totals.tpsSampleCount : null
       };
     });
-  }, [modelPrices, usage]);
+  }, [modelPrices, deferredUsage]);
 
   const handleSort = useCallback(
     (key: SortKey) => {

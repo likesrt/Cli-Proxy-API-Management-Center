@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, type ReactNode, useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import {
@@ -37,6 +37,7 @@ export function ModelStatsCard({ modelStats, loading, hasPrices, title, extra }:
   const { t } = useTranslation();
   const [sortKey, setSortKey] = useState<SortKey>('requests');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const deferredModelStats = useDeferredValue(modelStats);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -48,7 +49,7 @@ export function ModelStatsCard({ modelStats, loading, hasPrices, title, extra }:
   };
 
   const sorted = useMemo((): ModelStatWithRate[] => {
-    const list: ModelStatWithRate[] = modelStats.map((s) => ({
+    const list: ModelStatWithRate[] = deferredModelStats.map((s) => ({
       ...s,
       successRate: s.requests > 0 ? (s.successCount / s.requests) * 100 : 100,
     }));
@@ -66,7 +67,7 @@ export function ModelStatsCard({ modelStats, loading, hasPrices, title, extra }:
       return dir * (left - right);
     });
     return list;
-  }, [modelStats, sortKey, sortDir]);
+  }, [deferredModelStats, sortKey, sortDir]);
 
   const arrow = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
   const ariaSort = (key: SortKey): 'none' | 'ascending' | 'descending' =>

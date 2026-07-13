@@ -24,6 +24,7 @@ import {
   extractTotalTokens,
   formatDurationMs,
   normalizeAuthIndex,
+  type UsageDetail,
   type UsageThinking,
 } from '@/utils/usage';
 import { downloadBlob } from '@/utils/download';
@@ -67,6 +68,8 @@ type RequestEventRow = {
 export interface RequestEventsDetailsCardProps {
   usage: unknown;
   loading: boolean;
+  /** 页面层预计算的 usage details，传入后可跳过内部重复遍历 */
+  precomputedDetails?: UsageDetail[] | null;
   geminiKeys: GeminiKeyConfig[];
   claudeConfigs: ProviderKeyConfig[];
   codexConfigs: ProviderKeyConfig[];
@@ -187,6 +190,7 @@ const encodeCsv = (value: string | number): string => {
 export function RequestEventsDetailsCard({
   usage,
   loading,
+  precomputedDetails,
   geminiKeys,
   claudeConfigs,
   codexConfigs,
@@ -330,8 +334,13 @@ export function RequestEventsDetailsCard({
       ? Math.max(0, Math.ceil((nextRefreshAtMs - countdownNowMs) / 1000))
       : null;
 
+  const details = useMemo<UsageDetail[]>(
+    () => precomputedDetails ?? collectUsageDetails(usage),
+    [precomputedDetails, usage]
+  );
+
   const rows = useMemo<RequestEventRow[]>(() => {
-    const details = collectUsageDetails(usage);
+    if (!details.length) return [];
 
     const baseRows = details.map((detail, index) => {
       const timestamp = detail.timestamp;
@@ -447,7 +456,7 @@ export function RequestEventsDetailsCard({
         source: buildDisambiguatedSourceLabel(row),
       }))
       .sort((a, b) => b.timestampMs - a.timestampMs);
-  }, [authFileMap, i18n.language, sourceInfoMap, usage]);
+  }, [authFileMap, details, i18n.language, sourceInfoMap]);
 
   const hasTimingData = useMemo(
     () => rows.some((row) => row.firstByteLatencyMs !== null || row.generationMs !== null),

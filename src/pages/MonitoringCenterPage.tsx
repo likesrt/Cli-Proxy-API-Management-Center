@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authFilesApi } from '@/services/api/authFiles';
 import type { AuthFileItem } from '@/types/authFile';
@@ -36,9 +36,11 @@ import { MonitorTrendChart } from '@/components/monitor/MonitorTrendChart';
 import { ModelUsageDistributionCard } from '@/components/monitor/ModelUsageDistributionCard';
 import { MonitorApiKeyStatsCard } from '@/components/monitor/MonitorApiKeyStatsCard';
 import {
+  collectUsageDetails,
   filterUsageByTimeRange,
   getModelNamesFromUsage,
   getModelStats,
+  type UsageDetail,
   type UsageTimeRange
 } from '@/utils/usage';
 import {
@@ -133,6 +135,15 @@ export function MonitoringCenterPage() {
     () => (usage ? filterUsageByTimeRange(usage, timeRange) : null),
     [usage, timeRange]
   );
+
+  // ---- 性能关键：页面层一次性预计算 details，子组件复用；deferred 防阻塞 ----
+  const deferredFilteredUsage = useDeferredValue(filteredUsage);
+  const precomputedDetails = useMemo<UsageDetail[]>(
+    () => collectUsageDetails(filteredUsage),
+    [filteredUsage]
+  );
+  const deferredDetails = useDeferredValue(precomputedDetails);
+
   const hourWindowHours =
     timeRange === 'all' ? undefined : HOUR_WINDOW_BY_USAGE_TIME_RANGE[timeRange];
   const rateWindowMinutes = useMemo(() => {
@@ -146,7 +157,7 @@ export function MonitoringCenterPage() {
 
   const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
     useSparklines({
-      usage: filteredUsage as UsagePayload | null,
+      usage: deferredFilteredUsage as UsagePayload | null,
       loading,
       nowMs,
       timeRange,
@@ -283,6 +294,7 @@ export function MonitoringCenterPage() {
         <RequestEventsDetailsCard
           usage={filteredUsage}
           loading={loading}
+          precomputedDetails={deferredDetails}
           geminiKeys={config?.geminiApiKeys || []}
           claudeConfigs={config?.claudeApiKeys || []}
           codexConfigs={config?.codexApiKeys || []}
