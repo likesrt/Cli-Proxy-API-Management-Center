@@ -1129,6 +1129,23 @@
   color: var(--text-tertiary);
 }
 
+.requestEventsPagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+  margin-top: $spacing-sm;
+  flex-wrap: wrap;
+}
+
+.requestEventsPageStatus {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5em;
+  text-align: center;
+}
+
 .requestEventsTableWrapper {
   overflow: auto;
   max-height: 460px;

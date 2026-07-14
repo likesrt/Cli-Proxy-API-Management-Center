@@ -47,10 +47,12 @@ export function useUsageData(options: UseUsageDataOptions = {}): UseUsageDataRet
     });
   }, [loadUsageStats, minimumLookbackMs, refreshFullRange, timeRange]);
 
+  // 页面 mount / 切换回来：优先吃缓存，不要 force 全量重拉。
+  // 手动刷新走 loadUsage(force:true)。
   useEffect(() => {
     void loadUsageStats({
-      force: true,
-      fullRange: true,
+      force: false,
+      fullRange: false,
       staleTimeMs: USAGE_STATS_STALE_TIME_MS,
       timeRange,
       minimumLookbackMs,

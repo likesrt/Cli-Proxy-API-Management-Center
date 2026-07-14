@@ -257,7 +257,10 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       state.lastRefreshedAt !== null &&
       nowMs - state.lastRefreshedAt < staleTimeMs;
 
-    if (!force && !fullRange && fresh && hasStartCoverage(state.loadedRanges, targetStartMs)) {
+    // Soft cache hit: 数据仍新鲜且覆盖目标窗口时直接返回。
+    // 注意：旧逻辑把 fullRange 排除在短路外，导致监控页每次 mount
+    // 即使有缓存也会 force+fullRange 整包重拉，切回路径必卡。
+    if (!force && fresh && hasStartCoverage(state.loadedRanges, targetStartMs)) {
       return;
     }
 
@@ -342,7 +345,11 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: message,
           scopeKey,
         });
-        throw new Error(message);
+        const wrapped = new Error(message);
+        // preserve original error for debugging without relying on Error(message, { cause })
+        // which needs newer lib targets.
+        Object.assign(wrapped, { cause: error });
+        throw wrapped;
       } finally {
         if (inFlightUsageRequest?.id === requestId) {
           inFlightUsageRequest = null;

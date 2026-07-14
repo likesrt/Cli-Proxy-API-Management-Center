@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useDeferredValue, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useDeferredValue, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import type { UsagePayload } from '@/components/usage';
@@ -89,85 +89,109 @@ export function MonitorApiKeyStatsCard({
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const deferredUsage = useDeferredValue(usage);
 
-  const rows = useMemo<ApiKeyStatsRow[]>(() => {
-    const apis = isRecord(deferredUsage?.apis) ? deferredUsage.apis : null;
-    if (!apis) return [];
+  // ---- rows 计算从渲染期移除，用 rAF 异步执行 ----
+  const [rows, setRows] = useState<ApiKeyStatsRow[]>([]);
+  const computeIdRef = useRef(0);
 
-    return Object.entries(apis).map(([apiKey, apiEntry]) => {
-      const apiRecord = isRecord(apiEntry) ? apiEntry : {};
-      const models = getModelsRecord(apiEntry);
-      const totals: ApiKeyStatsAccumulator = {
-        apiKey,
-        requests: toNonNegativeNumber(apiRecord.total_requests),
-        successCount: toNonNegativeNumber(apiRecord.success_count),
-        failureCount: toNonNegativeNumber(apiRecord.failure_count),
-        tokens: toNonNegativeNumber(apiRecord.total_tokens),
-        cost: 0,
-        firstByteLatencyTotalMs: 0,
-        firstByteLatencySampleCount: 0,
-        totalTps: 0,
-        tpsSampleCount: 0
-      };
+  useEffect(() => {
+    const computeId = ++computeIdRef.current;
 
-      if (models) {
-        let derivedRequests = 0;
-        let derivedSuccessCount = 0;
-        let derivedFailureCount = 0;
-        let derivedTokens = 0;
+    const rafId = requestAnimationFrame(() => {
+      if (computeId !== computeIdRef.current) return;
 
-        Object.entries(models).forEach(([modelName, modelEntry]) => {
-          const modelRecord = isRecord(modelEntry) ? modelEntry : {};
-          const details = getDetails(modelEntry);
-          derivedRequests += toNonNegativeNumber(modelRecord.total_requests);
-          derivedSuccessCount += toNonNegativeNumber(modelRecord.success_count);
-          derivedFailureCount += toNonNegativeNumber(modelRecord.failure_count);
-          derivedTokens += getModelTotalTokens(modelEntry);
-
-          details.forEach((detail) => {
-            const detailRecord = isRecord(detail) ? detail : null;
-            if (!detailRecord) return;
-
-            totals.cost += calculateCost(
-              { ...(detailRecord as unknown as UsageDetail), __modelName: modelName },
-              modelPrices
-            );
-
-            const firstByteLatencyMs = extractFirstByteLatencyMs(detailRecord);
-            if (firstByteLatencyMs !== null && Number.isFinite(firstByteLatencyMs)) {
-              totals.firstByteLatencyTotalMs += firstByteLatencyMs;
-              totals.firstByteLatencySampleCount += 1;
-            }
-
-            const generationMs = extractGenerationMs(detailRecord);
-            const tokens = isRecord(detailRecord.tokens) ? detailRecord.tokens : null;
-            const outputTokens = toNonNegativeNumber(tokens?.output_tokens);
-            const tps = generationMs && generationMs > 0 ? outputTokens / (generationMs / 1000) : null;
-            if (tps !== null && Number.isFinite(tps) && tps >= 0) {
-              totals.totalTps += tps;
-              totals.tpsSampleCount += 1;
-            }
-          });
-        });
-
-        if (totals.requests === 0) totals.requests = derivedRequests;
-        if (totals.successCount === 0 && totals.failureCount === 0) {
-          totals.successCount = derivedSuccessCount;
-          totals.failureCount = derivedFailureCount;
-        }
-        if (totals.tokens === 0) totals.tokens = derivedTokens;
+      const apis = isRecord(deferredUsage?.apis) ? deferredUsage.apis : null;
+      if (!apis) {
+        if (computeId === computeIdRef.current) setRows([]);
+        return;
       }
 
-      return {
-        ...totals,
-        successRate: totals.requests > 0 ? (totals.successCount / totals.requests) * 100 : 100,
-        averageFirstByteLatencyMs:
-          totals.firstByteLatencySampleCount > 0
-            ? totals.firstByteLatencyTotalMs / totals.firstByteLatencySampleCount
-            : null,
-        averageTps: totals.tpsSampleCount > 0 ? totals.totalTps / totals.tpsSampleCount : null
-      };
+      const result = Object.entries(apis).map(([apiKey, apiEntry]) => {
+        if (computeId !== computeIdRef.current) return null;
+        const apiRecord = isRecord(apiEntry) ? apiEntry : {};
+        const models = getModelsRecord(apiEntry);
+        const totals: ApiKeyStatsAccumulator = {
+          apiKey,
+          requests: toNonNegativeNumber(apiRecord.total_requests),
+          successCount: toNonNegativeNumber(apiRecord.success_count),
+          failureCount: toNonNegativeNumber(apiRecord.failure_count),
+          tokens: toNonNegativeNumber(apiRecord.total_tokens),
+          cost: 0,
+          firstByteLatencyTotalMs: 0,
+          firstByteLatencySampleCount: 0,
+          totalTps: 0,
+          tpsSampleCount: 0
+        };
+
+        if (models) {
+          let derivedRequests = 0;
+          let derivedSuccessCount = 0;
+          let derivedFailureCount = 0;
+          let derivedTokens = 0;
+
+          for (const [modelName, modelEntry] of Object.entries(models)) {
+            if (computeId !== computeIdRef.current) break;
+            const modelRecord = isRecord(modelEntry) ? modelEntry : {};
+            const details = getDetails(modelEntry);
+            derivedRequests += toNonNegativeNumber(modelRecord.total_requests);
+            derivedSuccessCount += toNonNegativeNumber(modelRecord.success_count);
+            derivedFailureCount += toNonNegativeNumber(modelRecord.failure_count);
+            derivedTokens += getModelTotalTokens(modelEntry);
+
+            for (const detail of details) {
+              if (computeId !== computeIdRef.current) break;
+              const detailRecord = isRecord(detail) ? detail : null;
+              if (!detailRecord) continue;
+
+              totals.cost += calculateCost(
+                { ...(detailRecord as unknown as UsageDetail), __modelName: modelName },
+                modelPrices
+              );
+
+              const firstByteLatencyMs = extractFirstByteLatencyMs(detailRecord);
+              if (firstByteLatencyMs !== null && Number.isFinite(firstByteLatencyMs)) {
+                totals.firstByteLatencyTotalMs += firstByteLatencyMs;
+                totals.firstByteLatencySampleCount += 1;
+              }
+
+              const generationMs = extractGenerationMs(detailRecord);
+              const tokens = isRecord(detailRecord.tokens) ? detailRecord.tokens : null;
+              const outputTokens = toNonNegativeNumber(tokens?.output_tokens);
+              const tps = generationMs && generationMs > 0 ? outputTokens / (generationMs / 1000) : null;
+              if (tps !== null && Number.isFinite(tps) && tps >= 0) {
+                totals.totalTps += tps;
+                totals.tpsSampleCount += 1;
+              }
+            }
+          }
+
+          if (totals.requests === 0) totals.requests = derivedRequests;
+          if (totals.successCount === 0 && totals.failureCount === 0) {
+            totals.successCount = derivedSuccessCount;
+            totals.failureCount = derivedFailureCount;
+          }
+          if (totals.tokens === 0) totals.tokens = derivedTokens;
+        }
+
+        return {
+          ...totals,
+          successRate: totals.requests > 0 ? (totals.successCount / totals.requests) * 100 : 100,
+          averageFirstByteLatencyMs:
+            totals.firstByteLatencySampleCount > 0
+              ? totals.firstByteLatencyTotalMs / totals.firstByteLatencySampleCount
+              : null,
+          averageTps: totals.tpsSampleCount > 0 ? totals.totalTps / totals.tpsSampleCount : null
+        };
+      }).filter((r): r is ApiKeyStatsRow => r !== null);
+
+      if (computeId === computeIdRef.current) {
+        setRows(result);
+      }
     });
-  }, [modelPrices, deferredUsage]);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [deferredUsage, modelPrices]);
 
   const handleSort = useCallback(
     (key: SortKey) => {

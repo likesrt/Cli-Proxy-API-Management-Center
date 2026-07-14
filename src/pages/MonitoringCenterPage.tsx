@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useDeferredValue } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authFilesApi } from '@/services/api/authFiles';
 import type { AuthFileItem } from '@/types/authFile';
@@ -26,8 +26,8 @@ import {
   ModelStatsCard,
   PriceSettingsCard,
   RequestEventsDetailsCard,
-  useSparklines,
   useUsageData,
+  type SparklineBundle,
   type UsagePayload
 } from '@/components/usage';
 import type { ModelStat } from '@/components/usage/ModelStatsCard';
@@ -36,10 +36,15 @@ import { MonitorTrendChart } from '@/components/monitor/MonitorTrendChart';
 import { ModelUsageDistributionCard } from '@/components/monitor/ModelUsageDistributionCard';
 import { MonitorApiKeyStatsCard } from '@/components/monitor/MonitorApiKeyStatsCard';
 import {
+  buildDailyCostSeries,
+  buildDailySeriesByModel,
+  buildHourlyCostSeries,
+  buildHourlySeriesByModel,
   collectUsageDetails,
   filterUsageByTimeRange,
   getModelNamesFromUsage,
   getModelStats,
+  type ModelPrice,
   type UsageDetail,
   type UsageTimeRange
 } from '@/utils/usage';
@@ -78,6 +83,134 @@ const loadTimeRange = (): UsageTimeRange => {
   } catch {
     return DEFAULT_USAGE_TIME_RANGE;
   }
+};
+
+const EMPTY_SPARKLINES: {
+  requests: SparklineBundle | null;
+  tokens: SparklineBundle | null;
+  rpm: SparklineBundle | null;
+  tpm: SparklineBundle | null;
+  cost: SparklineBundle | null;
+} = {
+  requests: null,
+  tokens: null,
+  rpm: null,
+  tpm: null,
+  cost: null
+};
+
+const sumSeries = (dataByModel: Map<string, number[]>, length: number): number[] => {
+  const totals = new Array(length).fill(0);
+  dataByModel.forEach((values) => {
+    values.forEach((value, index) => {
+      totals[index] = (totals[index] || 0) + value;
+    });
+  });
+  return totals;
+};
+
+const trimDailySeriesToRecentDays = (
+  series: { labels: string[]; data: number[] },
+  days: number
+): { labels: string[]; data: number[] } => {
+  if (!Number.isFinite(days) || days <= 0 || series.labels.length <= days) {
+    return series;
+  }
+  const startIndex = Math.max(series.labels.length - days, 0);
+  return {
+    labels: series.labels.slice(startIndex),
+    data: series.data.slice(startIndex)
+  };
+};
+
+const buildSparklineBundle = (
+  series: { labels: string[]; data: number[] },
+  color: string,
+  backgroundColor: string
+): SparklineBundle | null => {
+  if (!series.data.length || !series.labels.length) {
+    return null;
+  }
+  return {
+    data: {
+      labels: series.labels,
+      datasets: [
+        {
+          data: series.data,
+          borderColor: color,
+          backgroundColor,
+          fill: true,
+          tension: 0.45,
+          pointRadius: 0,
+          borderWidth: 2
+        }
+      ]
+    }
+  };
+};
+
+const buildSparklineSeries = (usage: UsagePayload, timeRange: UsageTimeRange) => {
+  if (timeRange === '7h' || timeRange === '24h') {
+    const hourWindow = timeRange === '7h' ? 7 : 24;
+    const requestBase = buildHourlySeriesByModel(usage, 'requests', hourWindow);
+    const tokenBase = buildHourlySeriesByModel(usage, 'tokens', hourWindow);
+    return {
+      labels: requestBase.labels,
+      requests: sumSeries(requestBase.dataByModel, requestBase.labels.length),
+      tokens: sumSeries(tokenBase.dataByModel, tokenBase.labels.length)
+    };
+  }
+
+  const requestBase = buildDailySeriesByModel(usage, 'requests');
+  const tokenBase = buildDailySeriesByModel(usage, 'tokens');
+  const requestSeries = {
+    labels: requestBase.labels,
+    data: sumSeries(requestBase.dataByModel, requestBase.labels.length)
+  };
+  const tokenSeries = {
+    labels: tokenBase.labels,
+    data: sumSeries(tokenBase.dataByModel, tokenBase.labels.length)
+  };
+
+  if (timeRange === '7d' || timeRange === '30d') {
+    const days = timeRange === '7d' ? 7 : 30;
+    const trimmedRequests = trimDailySeriesToRecentDays(requestSeries, days);
+    const trimmedTokens = trimDailySeriesToRecentDays(tokenSeries, days);
+    return {
+      labels: trimmedRequests.labels,
+      requests: trimmedRequests.data,
+      tokens: trimmedTokens.data
+    };
+  }
+
+  return {
+    labels: requestSeries.labels,
+    requests: requestSeries.data,
+    tokens: tokenSeries.data
+  };
+};
+
+const buildCostSeries = (
+  usage: UsagePayload,
+  timeRange: UsageTimeRange,
+  modelPrices: Record<string, ModelPrice>
+) => {
+  if (!Object.keys(modelPrices).length) {
+    return { labels: [], data: [] };
+  }
+
+  if (timeRange === '7h' || timeRange === '24h') {
+    const hourWindow = timeRange === '7h' ? 7 : 24;
+    const costBase = buildHourlyCostSeries(usage, modelPrices, hourWindow);
+    return { labels: costBase.labels, data: costBase.data };
+  }
+
+  const costBase = buildDailyCostSeries(usage, modelPrices);
+  const series = { labels: costBase.labels, data: costBase.data };
+  if (timeRange === '7d' || timeRange === '30d') {
+    return trimDailySeriesToRecentDays(series, timeRange === '7d' ? 7 : 30);
+  }
+  return series;
 };
 
 export function MonitoringCenterPage() {
@@ -131,18 +264,88 @@ export function MonitoringCenterPage() {
     }
   }, [timeRange]);
 
-  const filteredUsage = useMemo(
-    () => (usage ? filterUsageByTimeRange(usage, timeRange) : null),
-    [usage, timeRange]
-  );
+  // 轻量异步预计算：避免切回时在 render 同步扫 usage。
+  // 明细表已分页到每页 50 行，不再需要分阶段 mount / 多段 setTimeout。
+  const [ready, setReady] = useState(false);
+  const [filteredUsage, setFilteredUsage] = useState<UsagePayload | null>(null);
+  const [precomputedDetails, setPrecomputedDetails] = useState<UsageDetail[]>([]);
+  const [precomputedModelStats, setPrecomputedModelStats] = useState<ModelStat[]>([]);
+  const [sparklines, setSparklines] = useState<{
+    requests: SparklineBundle | null;
+    tokens: SparklineBundle | null;
+    rpm: SparklineBundle | null;
+    tpm: SparklineBundle | null;
+    cost: SparklineBundle | null;
+  }>(EMPTY_SPARKLINES);
+  const [modelNames, setModelNames] = useState<string[]>([]);
+  const computeIdRef = useRef(0);
 
-  // ---- 性能关键：页面层一次性预计算 details，子组件复用；deferred 防阻塞 ----
-  const deferredFilteredUsage = useDeferredValue(filteredUsage);
-  const precomputedDetails = useMemo<UsageDetail[]>(
-    () => collectUsageDetails(filteredUsage),
-    [filteredUsage]
-  );
-  const deferredDetails = useDeferredValue(precomputedDetails);
+  useEffect(() => {
+    const computeId = ++computeIdRef.current;
+
+    const rafId = requestAnimationFrame(() => {
+      if (computeId !== computeIdRef.current) return;
+
+      const nextFiltered = usage
+        ? (filterUsageByTimeRange(usage, timeRange) as UsagePayload)
+        : null;
+      if (computeId !== computeIdRef.current) return;
+
+      const details = collectUsageDetails(nextFiltered);
+      if (computeId !== computeIdRef.current) return;
+
+      const stats = getModelStats(nextFiltered, modelPrices);
+      if (computeId !== computeIdRef.current) return;
+
+      const names = getModelNamesFromUsage(usage);
+      if (computeId !== computeIdRef.current) return;
+
+      let nextSparklines = EMPTY_SPARKLINES;
+      if (nextFiltered) {
+        const series = buildSparklineSeries(nextFiltered, timeRange);
+        const costSeries = buildCostSeries(nextFiltered, timeRange, modelPrices);
+        nextSparklines = {
+          requests: buildSparklineBundle(
+            { labels: series.labels, data: series.requests },
+            '#8b8680',
+            'rgba(139, 134, 128, 0.18)'
+          ),
+          tokens: buildSparklineBundle(
+            { labels: series.labels, data: series.tokens },
+            '#8b5cf6',
+            'rgba(139, 92, 246, 0.18)'
+          ),
+          rpm: buildSparklineBundle(
+            { labels: series.labels, data: series.requests },
+            '#22c55e',
+            'rgba(34, 197, 94, 0.18)'
+          ),
+          tpm: buildSparklineBundle(
+            { labels: series.labels, data: series.tokens },
+            '#f97316',
+            'rgba(249, 115, 22, 0.18)'
+          ),
+          cost: buildSparklineBundle(
+            { labels: costSeries.labels, data: costSeries.data },
+            '#f59e0b',
+            'rgba(245, 158, 11, 0.18)'
+          )
+        };
+      }
+
+      if (computeId !== computeIdRef.current) return;
+      setFilteredUsage(nextFiltered);
+      setPrecomputedDetails(details);
+      setPrecomputedModelStats(stats);
+      setModelNames(names);
+      setSparklines(nextSparklines);
+      setReady(true);
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [usage, timeRange, modelPrices]);
+
+  const showOverlay = (loading && !usage) || !ready;
 
   const hourWindowHours =
     timeRange === 'all' ? undefined : HOUR_WINDOW_BY_USAGE_TIME_RANGE[timeRange];
@@ -153,19 +356,6 @@ export function MonitoringCenterPage() {
     if (timeRange === '30d') return 30 * 24 * 60;
     return 30;
   }, [timeRange]);
-  const nowMs = lastRefreshedAt?.getTime() ?? 0;
-
-  const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
-    useSparklines({
-      usage: deferredFilteredUsage as UsagePayload | null,
-      loading,
-      nowMs,
-      timeRange,
-      modelPrices
-    });
-
-  const modelNames = useMemo(() => getModelNamesFromUsage(usage), [usage]);
-  const modelStats = useMemo<ModelStat[]>(() => getModelStats(filteredUsage, modelPrices), [filteredUsage, modelPrices]);
 
   const handleTimeRangeChange = useCallback((range: UsageTimeRange) => {
     setTimeRange(range);
@@ -192,7 +382,7 @@ export function MonitoringCenterPage() {
 
   return (
     <div className={styles.container}>
-      {loading && !usage && (
+      {showOverlay && (
         <div className={styles.loadingOverlay} aria-busy="true">
           <div className={styles.loadingOverlayContent}>
             <LoadingSpinner size={28} className={styles.loadingOverlaySpinner} />
@@ -234,78 +424,76 @@ export function MonitoringCenterPage() {
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
-      <MonitorStatCards
-        usage={filteredUsage as UsagePayload | null}
-        loading={loading}
-        modelPrices={modelPrices}
-        rateWindowMinutes={rateWindowMinutes}
-        timeRange={timeRange}
-        sparklines={{
-          requests: requestsSparkline,
-          tokens: tokensSparkline,
-          rpm: rpmSparkline,
-          tpm: tpmSparkline,
-          cost: costSparkline
-        }}
-      />
-
-      <div className={styles.topGrid}>
-        <MonitorTrendChart
-          usage={filteredUsage as UsagePayload | null}
-          loading={loading}
-          isDark={isDark}
-          isMobile={isMobile}
-          hourWindowHours={hourWindowHours}
-          modelPrices={modelPrices}
-        />
-        <ModelUsageDistributionCard
-          modelStats={modelStats}
-          loading={loading}
-          isDark={isDark}
-        />
-      </div>
-
-      <div className={styles.middleGrid}>
-        {usageStatsDimension === 'model' ? (
-          <ModelStatsCard
-            modelStats={modelStats}
-            loading={loading}
-            hasPrices={true}
-            title={t('monitoring_center.usage_stats_title')}
-            extra={usageStatsToggle}
-          />
-        ) : (
-          <MonitorApiKeyStatsCard
+      {!showOverlay && (
+        <>
+          <MonitorStatCards
             usage={filteredUsage as UsagePayload | null}
             loading={loading}
             modelPrices={modelPrices}
-            title={t('monitoring_center.usage_stats_title')}
-            extra={usageStatsToggle}
+            rateWindowMinutes={rateWindowMinutes}
+            timeRange={timeRange}
+            sparklines={sparklines}
           />
-        )}
-        <PriceSettingsCard
-          modelNames={modelNames}
-          modelPrices={modelPrices}
-          onPricesChange={setModelPrices}
-        />
-      </div>
 
-      <div className={styles.fullWidthSection}>
-        <RequestEventsDetailsCard
-          usage={filteredUsage}
-          loading={loading}
-          precomputedDetails={deferredDetails}
-          geminiKeys={config?.geminiApiKeys || []}
-          claudeConfigs={config?.claudeApiKeys || []}
-          codexConfigs={config?.codexApiKeys || []}
-          vertexConfigs={config?.vertexApiKeys || []}
-          openaiProviders={config?.openaiCompatibility || []}
-          authFiles={authFiles}
-          fixedHeight
-          onRefresh={handleRefresh}
-          lastRefreshedAt={lastRefreshedAt}
-        />
-      </div>
+          <div className={styles.topGrid}>
+            <MonitorTrendChart
+              usage={filteredUsage as UsagePayload | null}
+              loading={loading}
+              isDark={isDark}
+              isMobile={isMobile}
+              hourWindowHours={hourWindowHours}
+              modelPrices={modelPrices}
+            />
+            <ModelUsageDistributionCard
+              modelStats={precomputedModelStats}
+              loading={loading}
+              isDark={isDark}
+            />
+          </div>
+
+          <div className={styles.middleGrid}>
+            {usageStatsDimension === 'model' ? (
+              <ModelStatsCard
+                modelStats={precomputedModelStats}
+                loading={loading}
+                hasPrices={true}
+                title={t('monitoring_center.usage_stats_title')}
+                extra={usageStatsToggle}
+              />
+            ) : (
+              <MonitorApiKeyStatsCard
+                usage={filteredUsage as UsagePayload | null}
+                loading={loading}
+                modelPrices={modelPrices}
+                title={t('monitoring_center.usage_stats_title')}
+                extra={usageStatsToggle}
+              />
+            )}
+            <PriceSettingsCard
+              modelNames={modelNames}
+              modelPrices={modelPrices}
+              onPricesChange={setModelPrices}
+            />
+          </div>
+
+          <div className={styles.fullWidthSection}>
+            <RequestEventsDetailsCard
+              usage={filteredUsage}
+              loading={loading}
+              precomputedDetails={precomputedDetails}
+              geminiKeys={config?.geminiApiKeys || []}
+              claudeConfigs={config?.claudeApiKeys || []}
+              codexConfigs={config?.codexApiKeys || []}
+              vertexConfigs={config?.vertexApiKeys || []}
+              openaiProviders={config?.openaiCompatibility || []}
+              authFiles={authFiles}
+              fixedHeight
+              onRefresh={handleRefresh}
+              lastRefreshedAt={lastRefreshedAt}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

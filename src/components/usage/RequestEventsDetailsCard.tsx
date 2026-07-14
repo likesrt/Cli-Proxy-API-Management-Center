@@ -33,7 +33,7 @@ import styles from '@/pages/UsagePage.module.scss';
 const ALL_FILTER = '__all__';
 const RESULT_SUCCESS_FILTER = 'success';
 const RESULT_FAILURE_FILTER = 'failure';
-const MAX_RENDERED_EVENTS = 500;
+const PAGE_SIZE = 50;
 
 type RequestEventRow = {
   id: string;
@@ -339,10 +339,11 @@ export function RequestEventsDetailsCard({
     [precomputedDetails, usage]
   );
 
+  // 分页优先：只渲染当前页 50 行。rows 变换本身比 500 行 DOM 轻得多。
   const rows = useMemo<RequestEventRow[]>(() => {
     if (!details.length) return [];
 
-    const baseRows = details.map((detail, index) => {
+    const baseRows: RequestEventRow[] = details.map((detail, i) => {
       const timestamp = detail.timestamp;
       const timestampMs =
         typeof detail.__timestampMs === 'number' && detail.__timestampMs > 0
@@ -367,14 +368,8 @@ export function RequestEventsDetailsCard({
         Math.max(toNumber(detail.tokens?.cached_tokens), 0),
         Math.max(toNumber(detail.tokens?.cache_tokens), 0)
       );
-      const cacheCreationTokens = Math.max(
-        toNumber(detail.tokens?.cache_creation_tokens),
-        0
-      );
-      const totalTokens = Math.max(
-        toNumber(detail.tokens?.total_tokens),
-        extractTotalTokens(detail)
-      );
+      const cacheCreationTokens = Math.max(toNumber(detail.tokens?.cache_creation_tokens), 0);
+      const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
       const backendId = typeof detail.id === 'string' && detail.id.trim() ? detail.id.trim() : null;
       const firstByteLatencyMs = extractFirstByteLatencyMs(detail);
       const generationMs = extractGenerationMs(detail);
@@ -392,7 +387,7 @@ export function RequestEventsDetailsCard({
         typeof detail.failure_body === 'string' ? decodeHtmlEntities(detail.failure_body) : '';
 
       return {
-        id: backendId ?? `${timestamp}-${model}-${sourceKey}-${authIndex}-${index}`,
+        id: backendId ?? `${timestamp}-${model}-${sourceKey}-${authIndex}-${i}`,
         backendId,
         timestamp,
         timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
@@ -423,30 +418,18 @@ export function RequestEventsDetailsCard({
     });
 
     const sourceLabelKeyMap = new Map<string, Set<string>>();
-    baseRows.forEach((row) => {
+    for (const row of baseRows) {
       const keys = sourceLabelKeyMap.get(row.source) ?? new Set<string>();
       keys.add(row.sourceKey);
       sourceLabelKeyMap.set(row.source, keys);
-    });
+    }
 
     const buildDisambiguatedSourceLabel = (row: RequestEventRow) => {
       const labelKeyCount = sourceLabelKeyMap.get(row.source)?.size ?? 0;
-      if (labelKeyCount <= 1) {
-        return row.source;
-      }
-
-      if (row.authIndex !== '-') {
-        return `${row.source} · ${row.authIndex}`;
-      }
-
-      if (row.sourceRaw !== '-' && row.sourceRaw !== row.source) {
-        return `${row.source} · ${row.sourceRaw}`;
-      }
-
-      if (row.sourceType) {
-        return `${row.source} · ${row.sourceType}`;
-      }
-
+      if (labelKeyCount <= 1) return row.source;
+      if (row.authIndex !== '-') return `${row.source} · ${row.authIndex}`;
+      if (row.sourceRaw !== '-' && row.sourceRaw !== row.source) return `${row.source} · ${row.sourceRaw}`;
+      if (row.sourceType) return `${row.source} · ${row.sourceType}`;
       return `${row.source} · ${row.sourceKey}`;
     };
 
@@ -457,6 +440,8 @@ export function RequestEventsDetailsCard({
       }))
       .sort((a, b) => b.timestampMs - a.timestampMs);
   }, [authFileMap, details, i18n.language, sourceInfoMap]);
+
+  const [page, setPage] = useState(1);
 
   const hasTimingData = useMemo(
     () => rows.some((row) => row.firstByteLatencyMs !== null || row.generationMs !== null),
@@ -532,7 +517,24 @@ export function RequestEventsDetailsCard({
     [effectiveModelFilter, effectiveResultFilter, effectiveSourceFilter, rows]
   );
 
-  const renderedRows = useMemo(() => filteredRows.slice(0, MAX_RENDERED_EVENTS), [filteredRows]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, filteredRows.length);
+  const renderedRows = useMemo(
+    () => filteredRows.slice(pageStart, pageEnd),
+    [filteredRows, pageEnd, pageStart]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [effectiveModelFilter, effectiveResultFilter, effectiveSourceFilter]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const hasActiveFilters =
     effectiveModelFilter !== ALL_FILTER ||
@@ -543,6 +545,7 @@ export function RequestEventsDetailsCard({
     setModelFilter(ALL_FILTER);
     setSourceFilter(ALL_FILTER);
     setResultFilter(ALL_FILTER);
+    setPage(1);
   };
 
   const handleExportCsv = () => {
@@ -807,10 +810,14 @@ export function RequestEventsDetailsCard({
         <>
           <div className={styles.requestEventsMeta}>
             <span>{t('usage_stats.request_events_count', { count: filteredRows.length })}</span>
-            {filteredRows.length > MAX_RENDERED_EVENTS && (
+            {filteredRows.length > 0 && (
               <span className={styles.requestEventsLimitHint}>
-                {t('usage_stats.request_events_limit_hint', {
-                  shown: MAX_RENDERED_EVENTS,
+                {t('usage_stats.request_events_page_hint', {
+                  page: currentPage,
+                  totalPages,
+                  from: pageStart + 1,
+                  to: pageEnd,
+                  pageSize: PAGE_SIZE,
                 })}
               </span>
             )}
@@ -951,6 +958,30 @@ export function RequestEventsDetailsCard({
               </tbody>
             </table>
           </div>
+
+          {totalPages > 1 && (
+            <div className={styles.requestEventsPagination}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage <= 1}
+              >
+                {t('usage_stats.request_events_prev_page')}
+              </Button>
+              <span className={styles.requestEventsPageStatus}>
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                {t('usage_stats.request_events_next_page')}
+              </Button>
+            </div>
+          )}
         </>
       )}
 
