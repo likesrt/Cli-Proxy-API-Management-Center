@@ -17,7 +17,7 @@ import { LiveWire } from './components/LiveWire';
 import { Meter } from './components/Meter';
 import { Sparkline } from './components/Sparkline';
 import { ThroughputChart } from './components/ThroughputChart';
-import { useCountUp, useRevealGroup, useRevealOnScroll } from './components/motion';
+import { useCountUp, useRevealGroup, useRevealOnScroll } from '@/hooks/motion';
 import { providerLabel, splitWindowMinutes, toneForSuccessRate, type MeterTone } from './utils';
 import styles from './dashboard.module.scss';
 
@@ -72,6 +72,9 @@ export function DashboardPage() {
     const raw = config?.routingStrategy?.trim() ?? '';
     if (!raw) return DASH;
     if (raw === 'round-robin') return t('basic_settings.routing_strategy_round_robin');
+    if (raw === 'weighted-round-robin') {
+      return t('basic_settings.routing_strategy_weighted_round_robin');
+    }
     if (raw === 'fill-first') return t('basic_settings.routing_strategy_fill_first');
     return raw;
   }, [config?.routingStrategy, t]);
